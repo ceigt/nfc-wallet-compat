@@ -1,0 +1,9 @@
+NFC Wallet Compat
+Copyright 2026 ceigt
+
+This project includes a compile-only copy of libxposed API 102.0.0,
+published by libxposed under the Apache License, Version 2.0.
+See lib/LICENSE-libxposed.txt and lib/api-102.0.0.pom.
+
+The API classes are provided by the runtime framework and are not
+bundled into the generated module APK.
