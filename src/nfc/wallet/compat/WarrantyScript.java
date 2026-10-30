@@ -13,9 +13,6 @@ final class WarrantyScript {
               (location.pathname !== '/insurance/screenSecurity/electronicCard/' &&
                location.pathname !== '/insurance/screenSecurity/screenProduct/')) return;
           var imei = '__DEVICE_IMEI__', tries = 0, href = location.href;
-          var trace = window.__nfcWalletWarrantyTrace || (window.__nfcWalletWarrantyTrace = {phase:'start',queries:0,retries:0,zeroArguments:0,responses:[],errorCode:''});
-          var oldError = console.error;
-          if (!window.__nfcWarrantyConsole) {window.__nfcWarrantyConsole=true; console.error=function(){for(var i=0;i<arguments.length;i++){var c=arguments[i]&&arguments[i].code;if(/^\\d{1,10}$/.test(String(c)))trace.errorCode=String(c);}return oldError.apply(this,arguments);};}
           function refreshDeviceCache() {
             try {
               var bridge = window.RainbowBridge;
@@ -34,7 +31,7 @@ final class WarrantyScript {
           if (location.pathname !== '/insurance/screenSecurity/electronicCard/' || window.__nfcWalletWarrantyCompat) return;
           window.__nfcWalletWarrantyCompat = true;
           function install() {
-            if (location.href !== href) {trace.phase='changed-url';return;}
+            if (location.href !== href) return;
             var pending = window.$nuxt ? [window.$nuxt] : [], seen = new Set(), page;
             while (pending.length && seen.size < 1000) {
               var node = pending.pop();
@@ -47,19 +44,15 @@ final class WarrantyScript {
             }
             if (!page) {
               if (++tries < 50) setTimeout(install, 100);
-              else {trace.phase='timeout';window.__nfcWalletWarrantyCompat = false;}
+              else window.__nfcWalletWarrantyCompat = false;
               return;
             }
-            trace.phase='attached';
             var lookup = page.getSecurity, popup = page.popupImei, apply = page.applySecurityData;
             var fallbackAvailable = true, manualOther = false, lastOwnResult = false;
             page.applySecurityData = function (data) {
               var id = data && data.mobileInfoRespVO && data.mobileInfoRespVO.deviceId;
               var unknown = !!(data && data.modelMatch && (!id || /^0+$/.test(String(id))));
-              trace.responses.push({modelMatch:!!(data&&data.modelMatch),deviceMatches:id===imei,unknown:unknown});
-              if(trace.responses.length>4)trace.responses.shift();
               if (!manualOther && unknown) {
-                trace.filtered = (trace.filtered || 0) + 1;
                 if (!this.dataImei || this.dataImei.deviceId !== imei) this.popupImei();
                 return Promise.resolve(false);
               }
@@ -67,9 +60,7 @@ final class WarrantyScript {
               return apply.apply(this, arguments);
             };
             page.getSecurity = function () {
-              trace.queries++;
               var args = Array.prototype.slice.call(arguments);
-              if (/^0+$/.test(String(args[0]))) trace.zeroArguments++;
               if (!args[0] || /^0+$/.test(String(args[0]))) args[0] = imei;
               manualOther = args[0] !== imei;
               if (manualOther) fallbackAvailable = false;
@@ -83,7 +74,6 @@ final class WarrantyScript {
             page.popupImei = function () {
               if (!fallbackAvailable || (this.dataImei && this.dataImei.deviceId === imei)) return popup.apply(this, arguments);
               fallbackAvailable = false;
-              trace.retries++;
               var self = this, previousData = this.dataImei;
               Promise.resolve().then(function () { refreshDeviceCache(); return lookup.call(self, imei); }).then(function () {
                 if (lastOwnResult && self.dataImei !== previousData && self.dataImei && self.dataImei.deviceId === imei) self.isShowInputImei = false;
