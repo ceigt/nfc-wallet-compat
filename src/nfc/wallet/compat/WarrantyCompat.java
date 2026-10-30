@@ -34,7 +34,8 @@ final class WarrantyCompat {
     private static void inspect(XposedInterface api, ClassLoader loader, XposedInterface.Chain chain) throws Throwable {
         Object callback = chain.getThisObject();
         String method = (String) Reflect.get(callback, "mMethodName", String.class);
-        if (!"getDeviceInfo".equals(method) && !"getBaseDeviceInfo".equals(method) && !"getImei".equals(method)) return;
+        if (!"getClientContext".equals(method) && !"getDeviceInfo".equals(method)
+                && !"getBaseDeviceInfo".equals(method) && !"getImei".equals(method)) return;
         Class<?> util = Class.forName("com.finshell.common.util.d", false, loader);
         Context context = (Context) Reflect.invoke(util.getDeclaredMethod("c"), null);
         if (context == null || !WalletIdentity.matches(context, android.os.Process.myUid())) return;
