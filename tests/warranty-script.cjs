@@ -26,8 +26,9 @@ function setup({goodOrigin = true, goodPath = true, success = true, late = false
   assert.deepEqual(x.calls, [imei]); assert.equal(x.page.isShowInputImei, false);
   const wrapped = x.page.getSecurity; x.run(); assert.equal(x.page.getSecurity, wrapped);
   await x.page.getSecurity(); assert.equal(x.calls.at(-1), imei);
+  await x.page.getSecurity('000000000000000'); assert.equal(x.calls.at(-1), imei);
   await x.page.getSecurity('explicit-user-choice'); assert.equal(x.calls.at(-1), 'explicit-user-choice');
-  x.page.popupImei(); await tick(); assert.equal(x.calls.length, 3); assert.equal(x.page.popups, 1);
+  x.page.popupImei(); await tick(); assert.equal(x.calls.length, 4); assert.equal(x.page.popups, 1);
   const late = setup({late: true}); late.run(); await tick();
   assert.deepEqual(late.calls, [imei]); assert.equal(late.page.isShowInputImei, false);
   const failed = setup({success: false}); failed.run(); failed.page.popupImei(); await tick();

@@ -51,7 +51,7 @@ final class WarrantyScript {
             page.getSecurity = function () {
               initialLookupPending = false;
               var args = Array.prototype.slice.call(arguments);
-              if (!args[0]) args[0] = imei;
+              if (!args[0] || /^0+$/.test(String(args[0]))) args[0] = imei;
               refreshDeviceCache();
               var self = this, previousData = this.dataImei;
               return Promise.resolve(lookup.apply(this, args)).then(function (result) {
