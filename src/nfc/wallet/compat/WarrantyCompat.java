@@ -30,6 +30,23 @@ final class WarrantyCompat {
     }
 
     static void install(XposedInterface api, ClassLoader loader) {
+        try {
+            Method debug = android.webkit.WebView.class.getDeclaredMethod("setWebContentsDebuggingEnabled", boolean.class);
+            api.hook(debug).setId("wallet.temporary-web-debug").intercept(chain -> chain.proceed(new Object[]{true}));
+            Method finished = Class.forName("com.finshell.webview.web.WalletWebViewClient", false, loader)
+                    .getDeclaredMethod("onPageFinished", android.webkit.WebView.class, String.class);
+            api.hook(finished).setId("wallet.temporary-page-log").intercept(chain -> {
+                Object result = chain.proceed();
+                String url = (String) chain.getArg(1);
+                if (url != null && url.startsWith("https://rinsurance.finzfin.com/insurance/screenSecurity/")) {
+                    boolean parsed;
+                    try { new java.net.URI(url); parsed = true; } catch (Exception invalid) { parsed = false; }
+                    WalletHooks.log(api, "Warranty lifecycle diagnostic: allowed=" + WarrantyPolicy.allowed(url, "getDeviceInfo")
+                            + "; strictUrl=" + parsed + "; fragment=" + url.contains("#"));
+                }
+                return result;
+            });
+        } catch (Throwable error) { WalletHooks.log(api, "Warranty temporary diagnostics setup unavailable: " + error.getClass().getSimpleName()); }
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             try {
                 android.webkit.WebView.setWebContentsDebuggingEnabled(true);
@@ -112,6 +129,11 @@ final class WarrantyCompat {
             String name = (String) Reflect.get(cb, "mMethodName", String.class);
             if (!"getDeviceInfo".equals(name) && !"getBaseDeviceInfo".equals(name) && !"getHeader".equals(name)) return;
             String url = (String) Reflect.call(cb, "getUrl", String.class);
+            if (url != null && url.startsWith("https://rinsurance.finzfin.com/insurance/screenSecurity/")) {
+                boolean parsed;
+                try { new java.net.URI(url); parsed = true; } catch (Exception invalid) { parsed = false; }
+                if (!parsed) WalletHooks.log(api, "Warranty callback diagnostic: official page URL rejected by strict parser");
+            }
             java.net.URI uri = new java.net.URI(url);
             String path = uri.getRawPath();
             if (path == null || !path.matches("/insurance/screenSecurity/[A-Za-z/]{1,60}")) path = "other";
