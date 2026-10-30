@@ -10,10 +10,26 @@ final class WarrantyScript {
     private static final String SCRIPT = """
         (function () {
           if (location.origin !== 'https://rinsurance.finzfin.com' ||
-              location.pathname !== '/insurance/screenSecurity/electronicCard/' ||
-              window.__nfcWalletWarrantyCompat) return;
-          window.__nfcWalletWarrantyCompat = true;
+              (location.pathname !== '/insurance/screenSecurity/electronicCard/' &&
+               location.pathname !== '/insurance/screenSecurity/screenProduct/')) return;
           var imei = '__DEVICE_IMEI__', tries = 0, href = location.href;
+          function refreshDeviceCache() {
+            try {
+              var bridge = window.RainbowBridge;
+              if (!bridge || typeof bridge.getCache !== 'function' ||
+                  typeof bridge.removeMemoryCache !== 'function' || typeof bridge.removeStorageCache !== 'function') return;
+              ['getDeviceInfo', 'getBaseDeviceInfo', 'getHeader'].forEach(function (method) {
+                var data = bridge.getCache(method);
+                if (data && (data.imei !== imei || (method === 'getHeader' && data.id !== imei))) {
+                  bridge.removeMemoryCache(method);
+                  bridge.removeStorageCache(method);
+                }
+              });
+            } catch (ignored) { }
+          }
+          refreshDeviceCache();
+          if (location.pathname !== '/insurance/screenSecurity/electronicCard/' || window.__nfcWalletWarrantyCompat) return;
+          window.__nfcWalletWarrantyCompat = true;
           function install() {
             if (location.href !== href) return;
             var pending = window.$nuxt ? [window.$nuxt] : [], seen = new Set(), page;
@@ -22,7 +38,10 @@ final class WarrantyScript {
               if (!node || seen.has(node)) continue;
               seen.add(node);
               if (typeof node.getSecurity === 'function' && typeof node.popupImei === 'function' &&
-                  typeof node.dataIMEI === 'function' && typeof node.isShowInputImei === 'boolean' &&
+                  typeof node.dataIMEI === 'function' && typeof node.applySecurityData === 'function' &&
+                  node.$options && node.$options.methods && typeof node.$options.methods.getSecurity === 'function' &&
+                  typeof node.$options.methods.applySecurityData === 'function' &&
+                  typeof node.isShowInputImei === 'boolean' &&
                   node.dataImei && typeof node.dataImei === 'object') { page = node; break; }
               if (Array.isArray(node.$children)) pending.push.apply(pending, node.$children);
             }
@@ -31,24 +50,50 @@ final class WarrantyScript {
               else window.__nfcWalletWarrantyCompat = false;
               return;
             }
-            var lookup = page.getSecurity, popup = page.popupImei, initialLookupPending = true;
+            var lookup = page.$options.methods.getSecurity, popup = page.popupImei, apply = page.$options.methods.applySecurityData;
+            var sequence = 0, recoveryLeft = 1;
+            // Only callbacks from the current request may update this page or open its error dialog.
+            page.applySecurityData = function () { return Promise.resolve(false); };
+            page.popupImei = function () {};
             page.getSecurity = function () {
-              initialLookupPending = false;
               var args = Array.prototype.slice.call(arguments);
-              if (!args[0]) args[0] = imei;
-              return lookup.apply(this, args);
+              if (!args[0] || /^0+$/.test(String(args[0]))) args[0] = imei;
+              var request = ++sequence, accepted = false;
+              refreshDeviceCache();
+              var context = new Proxy(page, {
+                get: function (target, name) {
+                  if (name === 'applySecurityData') return function (data) {
+                    if (request !== sequence) return Promise.resolve(false);
+                    var id = data && data.mobileInfoRespVO && data.mobileInfoRespVO.deviceId;
+                    var unknown = !!(data && data.modelMatch && (!id || /^0+$/.test(String(id))));
+                    if (args[0] === imei && unknown) {
+                      if (page.dataImei && page.dataImei.deviceId === imei) return Promise.resolve(false);
+                      if (recoveryLeft > 0) {
+                        recoveryLeft--;
+                        Promise.resolve().then(function () { if (request === sequence) page.getSecurity(imei).catch(function () {}); });
+                      } else popup.call(page);
+                      return Promise.resolve(false);
+                    }
+                    accepted = !!(data && data.modelMatch && id === args[0]);
+                    if (accepted) page.isShowInputImei = false;
+                    return apply.call(context, data);
+                  };
+                  if (name === 'popupImei') return function () { if (request === sequence && !accepted) popup.apply(page, arguments); };
+                  return Reflect.get(target, name, target);
+                },
+                set: function (target, name, value) {
+                  return request === sequence ? Reflect.set(target, name, value, target) : true;
+                }
+              });
+              // Use the unbound Vue method so response callbacks retain this request's identity.
+              return Promise.resolve(lookup.apply(context, args)).then(function (result) {
+                return result;
+              }, function (error) {
+                if (request === sequence && !accepted) popup.call(page);
+                throw error;
+              });
             };
-            page.popupImei = function () {
-              if (!initialLookupPending) return popup.apply(this, arguments);
-              initialLookupPending = false;
-              var self = this;
-              Promise.resolve().then(function () { return lookup.call(self, imei); }).then(function () {
-                if (self.dataImei && self.dataImei.deviceId === imei) self.isShowInputImei = false;
-                else popup.call(self);
-              }, function () { popup.call(self); });
-            };
-            if (page.isShowInputImei && (!page.dataImei.deviceId || /^0+$/.test(page.dataImei.deviceId)))
-              page.popupImei();
+            page.getSecurity(imei).catch(function () {});
           }
           try { install(); } catch (ignored) { window.__nfcWalletWarrantyCompat = false; }
         })();

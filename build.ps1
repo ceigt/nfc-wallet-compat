@@ -5,7 +5,7 @@ param(
     [Parameter(Mandatory=$true,ParameterSetName='Signed')][string]$PasswordFile,
     [Parameter(Mandatory=$true,ParameterSetName='Unsigned')][switch]$Unsigned,
     [string]$KeyAlias = 'wallet-local',
-    [string]$OutputApk = (Join-Path $PSScriptRoot 'nfc-wallet-compat-0.6.1.apk')
+    [string]$OutputApk = (Join-Path $PSScriptRoot 'nfc-wallet-compat-0.6.2.apk')
 )
 $ErrorActionPreference = 'Stop'
 $tools = Join-Path $AndroidSdk 'build-tools\36.0.0'

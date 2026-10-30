@@ -14,6 +14,7 @@ import org.json.JSONObject;
 /** Supplies real device identifiers only to the verified official warranty page. */
 final class WarrantyCompat {
     private static final ThreadLocal<Repair> active = new ThreadLocal<>();
+    private static final AtomicBoolean loggedPage = new AtomicBoolean();
     private static final AtomicBoolean loggedFallback = new AtomicBoolean();
     private static final AtomicBoolean loggedRepair = new AtomicBoolean();
     private static final AtomicBoolean loggedStatistics = new AtomicBoolean();
@@ -77,6 +78,27 @@ final class WarrantyCompat {
                     else active.set(previous);
                 }
             }));
+            Method finished = Class.forName("com.finshell.webview.web.WalletWebViewClient", false, loader)
+                    .getDeclaredMethod("onPageFinished", android.webkit.WebView.class, String.class);
+            hooks.add(api.hook(finished).setId("wallet.warranty-page").intercept(chain -> {
+                Object result = chain.proceed();
+                try {
+                    android.webkit.WebView view = (android.webkit.WebView) chain.getArg(0);
+                    if (WarrantyPolicy.allowed((String) chain.getArg(1), "getDeviceInfo")
+                            && WarrantyPolicy.allowed(view.getUrl(), "getDeviceInfo")) {
+                        String imei = readImei(loader);
+                        if (imei != null) {
+                            view.evaluateJavascript(WarrantyScript.render(imei), null);
+                            if (loggedPage.compareAndSet(false, true)) WalletHooks.log(api,
+                                    "Official warranty page fallback scheduled; current page verified");
+                        }
+                    }
+                } catch (Throwable error) {
+                    if (loggedUnavailable.compareAndSet(false, true)) WalletHooks.log(api,
+                            "Warranty page fallback unavailable: " + error.getClass().getSimpleName());
+                }
+                return result;
+            }));
             WalletHooks.log(api, "Official warranty IMEI adapter installed; URL, Wallet signer and version guarded");
         } catch (Throwable failure) {
             for (XposedInterface.HookHandle hook : hooks) hook.unhook();
@@ -91,22 +113,27 @@ final class WarrantyCompat {
         String url = (String) Reflect.call(callback, "getUrl", String.class);
         if (!WarrantyPolicy.allowed(url, method)
                 || !NfcPolicy.supportedDevice(android.os.Build.MODEL, android.os.Build.VERSION.SDK_INT)) return null;
-        Class<?> util = Class.forName("com.finshell.common.util.d", false, loader);
-        Context context = (Context) Reflect.invoke(util.getDeclaredMethod("c"), null);
-        if (context == null || !WalletIdentity.matches(context, android.os.Process.myUid())
-                || context.getPackageManager().getPackageInfo(CompatPolicy.WALLET, 0).versionCode != 551053) return null;
         JSONObject original = (JSONObject) chain.getArg(2);
         if (!original.has("imei") && !"getHeader".equals(method)) return null;
         long started = (long) Reflect.get(callback, "apiStartTime", long.class);
         if (System.currentTimeMillis() - started > 59000) return null;
-        TelephonyManager tm = context.getSystemService(TelephonyManager.class);
-        if (tm == null) return null;
-        String imei = tm.getImei(0);
-        if (!WarrantyPolicy.validImei(imei)) return null;
+        String imei = readImei(loader);
+        if (imei == null) return null;
         JSONObject patched = new JSONObject(original.toString());
         patched.put("imei", imei);
         if ("getHeader".equals(method)) patched.put("id", imei);
         return new Repair(original, patched);
+    }
+
+    private static String readImei(ClassLoader loader) throws Throwable {
+        if (!NfcPolicy.supportedDevice(android.os.Build.MODEL, android.os.Build.VERSION.SDK_INT)) return null;
+        Class<?> util = Class.forName("com.finshell.common.util.d", false, loader);
+        Context context = (Context) Reflect.invoke(util.getDeclaredMethod("c"), null);
+        if (context == null || !WalletIdentity.matches(context, android.os.Process.myUid())
+                || context.getPackageManager().getPackageInfo(CompatPolicy.WALLET, 0).versionCode != 551053) return null;
+        TelephonyManager tm = context.getSystemService(TelephonyManager.class);
+        String imei = tm == null ? null : tm.getImei(0);
+        return WarrantyPolicy.validImei(imei) ? imei : null;
     }
 
     private static void schedule(XposedInterface api, ClassLoader loader, Object callback, String imei) throws Throwable {
