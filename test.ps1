@@ -10,7 +10,7 @@ New-Item -ItemType Directory -Force $classes | Out-Null
 $sources = Get-ChildItem "$PSScriptRoot\src","$PSScriptRoot\tests" -Recurse -Filter '*.java' | ForEach-Object FullName
 & "$JavaBin\javac.exe" -encoding UTF-8 --release 17 -cp "$android;$api" -d $classes @sources
 if ($LASTEXITCODE) { throw 'Test compilation failed' }
-foreach ($test in 'PolicyTest','ProfileTest','BindingTest','HookFlowTest') {
+foreach ($test in 'PolicyTest','ProfileTest','BindingTest','HookFlowTest','WarrantyPolicyTest') {
     & "$JavaBin\java.exe" -ea -cp "$classes;$android;$api" "nfc.wallet.compat.$test"
     if ($LASTEXITCODE) { throw "$test failed" }
 }

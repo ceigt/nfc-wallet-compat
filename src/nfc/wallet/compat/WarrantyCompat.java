@@ -4,57 +4,89 @@ import android.content.Context;
 import android.telephony.TelephonyManager;
 import io.github.libxposed.api.XposedInterface;
 import java.lang.reflect.Method;
-import java.net.URI;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.json.JSONObject;
 
-/** Narrow diagnostics for the warranty bridge, without logging device identifiers. */
+/** Supplies real device identifiers only to the verified official warranty page. */
 final class WarrantyCompat {
-    private static final Set<String> logged = new HashSet<>();
+    private static final ThreadLocal<Repair> active = new ThreadLocal<>();
+    private static final AtomicBoolean loggedRepair = new AtomicBoolean();
+    private static final AtomicBoolean loggedUnavailable = new AtomicBoolean();
+
+    private static final class Repair {
+        final JSONObject original;
+        final JSONObject patched;
+        Repair(JSONObject original, JSONObject patched) {
+            this.original = original;
+            this.patched = patched;
+        }
+    }
 
     static void install(XposedInterface api, ClassLoader loader) {
+        List<XposedInterface.HookHandle> hooks = new ArrayList<>();
         try {
             Class<?> callback = Class.forName("com.finshell.jsbridge.JsCallback", false, loader);
+            Method statistics = callback.getDeclaredMethod("postResult", String.class, String.class,
+                    String.class, JSONObject.class, long.class);
+            hooks.add(api.hook(statistics).setId("wallet.warranty-statistics").intercept(chain -> {
+                Repair repair = active.get();
+                if (repair == null || chain.getArg(3) != repair.patched) return chain.proceed();
+                Object[] args = chain.getArgs().toArray();
+                // Preserve the original privacy-redacted response in vendor statistics.
+                args[3] = repair.original;
+                return chain.proceed(args);
+            }));
             Method method = callback.getDeclaredMethod("doJSCallback", boolean.class, int.class,
                     JSONObject.class, String.class, boolean.class);
-            api.hook(method).setId("wallet.warranty-bridge").intercept(chain -> {
-                try { inspect(api, loader, chain); }
+            hooks.add(api.hook(method).setId("wallet.warranty-bridge").intercept(chain -> {
+                Repair repair = null;
+                try { repair = prepare(loader, chain); }
                 catch (Throwable failure) {
-                    WalletHooks.log(api, "Warranty bridge inspection unavailable: " + failure.getClass().getSimpleName());
+                    if (loggedUnavailable.compareAndSet(false, true)) WalletHooks.log(api,
+                            "Warranty IMEI unavailable; check device-identifier access: " + failure.getClass().getSimpleName());
                 }
-                return chain.proceed();
-            });
-            WalletHooks.log(api, "Warranty bridge diagnostics installed; identifiers are not logged");
-        } catch (Exception | LinkageError failure) {
+                if (repair == null) return chain.proceed();
+                Repair previous = active.get();
+                active.set(repair);
+                Object[] args = chain.getArgs().toArray();
+                args[2] = repair.patched;
+                try {
+                    if (loggedRepair.compareAndSet(false, true)) WalletHooks.log(api,
+                            "Verified warranty page received real device IMEI; identifiers are not logged");
+                    return chain.proceed(args);
+                } finally {
+                    if (previous == null) active.remove();
+                    else active.set(previous);
+                }
+            }));
+            WalletHooks.log(api, "Official warranty IMEI adapter installed; URL, Wallet signer and version guarded");
+        } catch (Throwable failure) {
+            for (XposedInterface.HookHandle hook : hooks) hook.unhook();
             WalletHooks.log(api, "Warranty bridge interface unavailable: " + failure.getClass().getSimpleName());
         }
     }
 
-    private static void inspect(XposedInterface api, ClassLoader loader, XposedInterface.Chain chain) throws Throwable {
+    private static Repair prepare(ClassLoader loader, XposedInterface.Chain chain) throws Throwable {
+        if (!Boolean.TRUE.equals(chain.getArg(0)) || !(chain.getArg(2) instanceof JSONObject)) return null;
         Object callback = chain.getThisObject();
         String method = (String) Reflect.get(callback, "mMethodName", String.class);
-        if (!"getClientContext".equals(method) && !"getDeviceInfo".equals(method)
-                && !"getBaseDeviceInfo".equals(method) && !"getImei".equals(method)) return;
+        String url = (String) Reflect.call(callback, "getUrl", String.class);
+        if (!WarrantyPolicy.allowed(url, method)
+                || !NfcPolicy.supportedDevice(android.os.Build.MODEL, android.os.Build.VERSION.SDK_INT)) return null;
         Class<?> util = Class.forName("com.finshell.common.util.d", false, loader);
         Context context = (Context) Reflect.invoke(util.getDeclaredMethod("c"), null);
-        if (context == null || !WalletIdentity.matches(context, android.os.Process.myUid())) return;
-        URI url = new URI((String) Reflect.call(callback, "getUrl", String.class));
-        String route = url.getFragment();
-        if (route != null) route = route.split("\\?", 2)[0];
-        String page = (url.getHost() + url.getPath() + (route == null ? "" : "#" + route))
-                .replaceAll("[0-9]{10,}", "[redacted]");
-        String key = method + " " + page;
-        synchronized (logged) { if (logged.size() >= 16 || !logged.add(key)) return; }
-        Object data = chain.getArg(2);
-        JSONObject result = data instanceof JSONObject ? (JSONObject) data : null;
-        boolean realImeiReadable = false;
-        try {
-            String imei = context.getSystemService(TelephonyManager.class).getImei(0);
-            realImeiReadable = imei != null && imei.matches("[0-9]{15}") && !imei.matches("0+");
-        } catch (RuntimeException ignored) { }
-        WalletHooks.log(api, "Warranty bridge: " + key + "; success=" + chain.getArg(0)
-                + "; hasImei=" + (result != null && result.has("imei"))
-                + "; realImeiReadable=" + realImeiReadable);
+        if (context == null || !WalletIdentity.matches(context, android.os.Process.myUid())
+                || context.getPackageManager().getPackageInfo(CompatPolicy.WALLET, 0).versionCode != 551053) return null;
+        JSONObject original = (JSONObject) chain.getArg(2);
+        if (!original.has("imei")) return null;
+        TelephonyManager tm = context.getSystemService(TelephonyManager.class);
+        if (tm == null) return null;
+        String imei = tm.getImei(0);
+        if (!WarrantyPolicy.validImei(imei)) return null;
+        JSONObject patched = new JSONObject(original.toString());
+        patched.put("imei", imei);
+        return new Repair(original, patched);
     }
 }

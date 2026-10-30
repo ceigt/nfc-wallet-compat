@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="nfc.wallet.compat" android:versionCode="11" android:versionName="0.6.1-rc2">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="nfc.wallet.compat" android:versionCode="12" android:versionName="0.6.1-rc3">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="36" />
     <application android:label="NFC Wallet Compat" android:hasCode="true" android:allowBackup="false" android:description="@string/module_description" />
 </manifest>
