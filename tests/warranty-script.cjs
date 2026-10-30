@@ -33,5 +33,30 @@ function setup({goodOrigin = true, goodPath = true, success = true, late = false
   const failed = setup({success: false}); failed.run(); failed.page.popupImei(); await tick();
   assert.deepEqual(failed.calls, [imei]); assert.equal(failed.page.isShowInputImei, true);
   assert.ok(failed.page.popups <= 2); // Server rejection stays visible; no retry loop.
-  console.log('PASS: warranty lookup origin/path, real-device fallback, explicit user choice and server rejection');
+  const cached = setup(), removed = [];
+  const memory = {getDeviceInfo: {imei: '000000000000000'}, getBaseDeviceInfo: {imei}, getToken: {token: 'unchanged'}};
+  const storage = {getDeviceInfo: {imei: '000000000000000'}, getHeader: {imei: '000000000000000', id: '000000000000000'}};
+  cached.window.RainbowBridge = {
+    getCache(method) { return memory[method] || storage[method]; },
+    removeMemoryCache(method) { removed.push('memory:' + method); delete memory[method]; },
+    removeStorageCache(method) { removed.push('storage:' + method); delete storage[method]; }
+  };
+  cached.run();
+  assert.equal(memory.getDeviceInfo, undefined); assert.equal(storage.getDeviceInfo, undefined);
+  assert.equal(storage.getHeader, undefined); assert.deepEqual(memory.getBaseDeviceInfo, {imei});
+  assert.deepEqual(memory.getToken, {token: 'unchanged'});
+  assert.equal(removed.length, 4); // Remove stale memory AND storage, including storage-only entries.
+  const firstWrapper = cached.page.getSecurity;
+  memory.getDeviceInfo = {imei: '000000000000000'}; cached.run();
+  assert.equal(memory.getDeviceInfo, undefined); assert.equal(cached.page.getSecurity, firstWrapper);
+  const throwingCache = setup(); throwingCache.window.RainbowBridge = {
+    getCache() { throw new Error('cache unavailable'); }, removeMemoryCache() {}, removeStorageCache() {}
+  };
+  throwingCache.run(); await throwingCache.page.getSecurity(); assert.deepEqual(throwingCache.calls, [imei]);
+  const race = setup(); let finish;
+  race.page.getSecurity = async function(id) {race.calls.push(id); await new Promise(resolve => {finish=resolve;}); this.dataImei={deviceId:id};};
+  race.run(); const query = race.page.getSecurity(); race.page.popupImei();
+  assert.equal(race.page.isShowInputImei, true); finish(); await query;
+  assert.deepEqual(race.calls, [imei]); assert.equal(race.page.isShowInputImei, false);
+  console.log('PASS: warranty lookup origin/path, real-device fallback, explicit user choice, server rejection, stale device caches and late popup race');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -10,10 +10,26 @@ final class WarrantyScript {
     private static final String SCRIPT = """
         (function () {
           if (location.origin !== 'https://rinsurance.finzfin.com' ||
-              location.pathname !== '/insurance/screenSecurity/electronicCard/' ||
-              window.__nfcWalletWarrantyCompat) return;
-          window.__nfcWalletWarrantyCompat = true;
+              (location.pathname !== '/insurance/screenSecurity/electronicCard/' &&
+               location.pathname !== '/insurance/screenSecurity/screenProduct/')) return;
           var imei = '__DEVICE_IMEI__', tries = 0, href = location.href;
+          function refreshDeviceCache() {
+            try {
+            var bridge = window.RainbowBridge;
+            if (!bridge || typeof bridge.getCache !== 'function' ||
+                typeof bridge.removeMemoryCache !== 'function' || typeof bridge.removeStorageCache !== 'function') return;
+            ['getDeviceInfo', 'getBaseDeviceInfo', 'getHeader'].forEach(function (method) {
+              var data = bridge.getCache(method);
+              if (data && (data.imei !== imei || (method === 'getHeader' && data.id !== imei))) {
+                bridge.removeMemoryCache(method);
+                bridge.removeStorageCache(method);
+              }
+            });
+            } catch (ignored) { }
+          }
+          refreshDeviceCache();
+          if (location.pathname !== '/insurance/screenSecurity/electronicCard/' || window.__nfcWalletWarrantyCompat) return;
+          window.__nfcWalletWarrantyCompat = true;
           function install() {
             if (location.href !== href) return;
             var pending = window.$nuxt ? [window.$nuxt] : [], seen = new Set(), page;
@@ -36,13 +52,18 @@ final class WarrantyScript {
               initialLookupPending = false;
               var args = Array.prototype.slice.call(arguments);
               if (!args[0]) args[0] = imei;
-              return lookup.apply(this, args);
+              refreshDeviceCache();
+              var self = this;
+              return Promise.resolve(lookup.apply(this, args)).then(function (result) {
+                if (args[0] === imei && self.dataImei && self.dataImei.deviceId === imei) self.isShowInputImei = false;
+                return result;
+              });
             };
             page.popupImei = function () {
               if (!initialLookupPending) return popup.apply(this, arguments);
               initialLookupPending = false;
               var self = this;
-              Promise.resolve().then(function () { return lookup.call(self, imei); }).then(function () {
+              Promise.resolve().then(function () { refreshDeviceCache(); return lookup.call(self, imei); }).then(function () {
                 if (self.dataImei && self.dataImei.deviceId === imei) self.isShowInputImei = false;
                 else popup.call(self);
               }, function () { popup.call(self); });
