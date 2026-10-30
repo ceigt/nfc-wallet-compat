@@ -13,9 +13,6 @@ final class WarrantyScript {
               (location.pathname !== '/insurance/screenSecurity/electronicCard/' &&
                location.pathname !== '/insurance/screenSecurity/screenProduct/')) return;
           var imei = '__DEVICE_IMEI__', tries = 0, href = location.href;
-          var state=window.__nfcWarrantyOutcome||(window.__nfcWarrantyOutcome={phase:'search',request:0,own:false,applied:[],popups:0,stale:0,errorCode:''});
-          var oldError=console.error;
-          if(!window.__nfcWarrantyConsole){window.__nfcWarrantyConsole=true;console.error=function(){for(var i=0;i<arguments.length;i++){var c=arguments[i]&&arguments[i].code;if(/^\\d{1,10}$/.test(String(c)))state.errorCode=String(c);}return oldError.apply(this,arguments);};}
           function refreshDeviceCache() {
             try {
               var bridge = window.RainbowBridge;
@@ -34,7 +31,7 @@ final class WarrantyScript {
           if (location.pathname !== '/insurance/screenSecurity/electronicCard/' || window.__nfcWalletWarrantyCompat) return;
           window.__nfcWalletWarrantyCompat = true;
           function install() {
-            if (location.href !== href) {state.phase='url-changed';return;}
+            if (location.href !== href) return;
             var pending = window.$nuxt ? [window.$nuxt] : [], seen = new Set(), page;
             while (pending.length && seen.size < 1000) {
               var node = pending.pop();
@@ -50,36 +47,25 @@ final class WarrantyScript {
             }
             if (!page) {
               if (++tries < 50) setTimeout(install, 100);
-              else {state.phase='timeout';window.__nfcWalletWarrantyCompat = false;}
+              else window.__nfcWalletWarrantyCompat = false;
               return;
             }
-            state.phase='attached';
             var lookup = page.$options.methods.getSecurity, popup = page.popupImei, apply = page.$options.methods.applySecurityData;
-            var sequence = 0, recoveryLeft = 1, userInteracted = false;
-            function userIntent(event) {
-              if (!event.isTrusted) return;
-              userInteracted = true;state.userInteracted=true;
-              ['pointerdown','keydown','click'].forEach(function (name) { document.removeEventListener(name, userIntent, true); });
-            }
-            ['pointerdown','keydown','click'].forEach(function (name) { document.addEventListener(name, userIntent, true); });
-            // Existing untracked requests must not update the page after an explicit-device query starts.
+            var sequence = 0, recoveryLeft = 1;
+            // Only callbacks from the current request may update this page or open its error dialog.
             page.applySecurityData = function () { return Promise.resolve(false); };
-            page.popupImei = function () {
-              if (userInteracted) {state.legacyPopups=(state.legacyPopups||0)+1;return popup.apply(page, arguments);}
-            };
+            page.popupImei = function () {};
             page.getSecurity = function () {
               var args = Array.prototype.slice.call(arguments);
               if (!args[0] || /^0+$/.test(String(args[0]))) args[0] = imei;
               var request = ++sequence, accepted = false;
-              state.request=request;state.own=args[0]===imei;
               refreshDeviceCache();
               var context = new Proxy(page, {
                 get: function (target, name) {
                   if (name === 'applySecurityData') return function (data) {
-                    if (request !== sequence) {state.stale++;return Promise.resolve(false);}
+                    if (request !== sequence) return Promise.resolve(false);
                     var id = data && data.mobileInfoRespVO && data.mobileInfoRespVO.deviceId;
                     var unknown = !!(data && data.modelMatch && (!id || /^0+$/.test(String(id))));
-                    state.applied.push({request:request,match:!!(data&&data.modelMatch),own:id===imei,unknown:unknown});if(state.applied.length>5)state.applied.shift();
                     if (args[0] === imei && unknown) {
                       if (page.dataImei && page.dataImei.deviceId === imei) return Promise.resolve(false);
                       if (recoveryLeft > 0) {
@@ -89,9 +75,10 @@ final class WarrantyScript {
                       return Promise.resolve(false);
                     }
                     accepted = !!(data && data.modelMatch && id === args[0]);
+                    if (accepted) page.isShowInputImei = false;
                     return apply.call(context, data);
                   };
-                  if (name === 'popupImei') return function () { if (request === sequence) {state.popups++;popup.apply(page, arguments);} };
+                  if (name === 'popupImei') return function () { if (request === sequence && !accepted) popup.apply(page, arguments); };
                   return Reflect.get(target, name, target);
                 },
                 set: function (target, name, value) {
@@ -100,10 +87,9 @@ final class WarrantyScript {
               });
               // Use the unbound Vue method so response callbacks retain this request's identity.
               return Promise.resolve(lookup.apply(context, args)).then(function (result) {
-                if (request === sequence && accepted && page.dataImei && page.dataImei.deviceId === args[0]) page.isShowInputImei = false;
                 return result;
               }, function (error) {
-                if (request === sequence) popup.call(page);
+                if (request === sequence && !accepted) popup.call(page);
                 throw error;
               });
             };

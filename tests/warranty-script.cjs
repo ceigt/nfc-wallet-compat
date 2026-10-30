@@ -28,7 +28,7 @@ function setup({origin='https://rinsurance.finzfin.com',pagePath='/insurance/scr
  const x=setup();x.run();await tick();assert.deepEqual(x.calls,[imei]);assert.equal(x.page.dataImei.deviceId,imei);
  const wrapped=x.page.getSecurity;x.run();await tick();assert.equal(x.page.getSecurity,wrapped);assert.equal(x.calls.length,1);
  await x.page.applySecurityData({modelMatch:false});x.page.popupImei();assert.equal(x.page.isShowInputImei,false); // Old untracked responses/errors cannot overwrite this query.
- x.interact();x.page.popupImei();assert.equal(x.page.isShowInputImei,true);
+ x.interact();x.page.popupImei();assert.equal(x.page.isShowInputImei,false);
  await x.page.getSecurity('another-device');assert.equal(x.calls.at(-1),'another-device');assert.equal(x.page.dataImei.deviceId,'another-device');
  await x.page.getSecurity('000000000000000');assert.equal(x.calls.at(-1),imei);
  const pending=[];
@@ -53,5 +53,17 @@ function setup({origin='https://rinsurance.finzfin.com',pagePath='/insurance/scr
  const battery=setup({pagePath:'/insurance/screenSecurity/screenProduct/'}),original=battery.page.getSecurity;let invalidated=0;
  battery.window.RainbowBridge={getCache(){return {imei:'000000000000000'};},removeMemoryCache(){invalidated++;},removeStorageCache(){invalidated++;}};
  battery.run();assert.equal(battery.page.getSecurity,original);assert.equal(invalidated,6);
+ let releaseAux;
+ const delayed=setup({lookup:async function(id){await this.applySecurityData(valid(id));await new Promise(resolve=>{releaseAux=resolve;});}});
+ delayed.page.isShowInputImei=true;delayed.run();await tick();
+ assert.equal(delayed.page.isShowInputImei,false); // Identity is valid before unrelated warranty-cache work completes.
+ releaseAux();await tick();
+ const auxFailure=setup({lookup:async function(id){await this.applySecurityData(valid(id));this.popupImei();}});
+ auxFailure.run();await tick();assert.equal(auxFailure.page.isShowInputImei,false);
+ const unidentified=setup({lookup:async function(){this.popupImei();}});
+ unidentified.run();await tick();assert.equal(unidentified.page.isShowInputImei,true);
+ const manual=setup({lookup:async function(id){await this.applySecurityData(id===imei?{modelMatch:false}:valid(id));}});
+ manual.run();await tick();assert.equal(manual.page.isShowInputImei,true);
+ await manual.page.getSecurity('manual-device');assert.equal(manual.page.dataImei.deviceId,'manual-device');assert.equal(manual.page.isShowInputImei,false);
  console.log('PASS: Vue-bound methods, request identity, late stale responses, current official refusals, manual queries, scoped cache recovery and bounded retries');
 })().catch(error=>{console.error(error);process.exitCode=1;});
