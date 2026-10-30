@@ -52,7 +52,7 @@ final class WarrantyScript {
             }
             trace.phase='attached';
             var lookup = page.getSecurity, popup = page.popupImei, apply = page.applySecurityData;
-            var fallbackAvailable = true, manualOther = false;
+            var fallbackAvailable = true, manualOther = false, lastOwnResult = false;
             page.applySecurityData = function (data) {
               var id = data && data.mobileInfoRespVO && data.mobileInfoRespVO.deviceId;
               var unknown = !!(data && data.modelMatch && (!id || /^0+$/.test(String(id))));
@@ -63,6 +63,7 @@ final class WarrantyScript {
                 if (!this.dataImei || this.dataImei.deviceId !== imei) this.popupImei();
                 return Promise.resolve(false);
               }
+              lastOwnResult = !!(data && data.modelMatch && id === imei);
               return apply.apply(this, arguments);
             };
             page.getSecurity = function () {
@@ -75,7 +76,7 @@ final class WarrantyScript {
               refreshDeviceCache();
               var self = this, previousData = this.dataImei;
               return Promise.resolve(lookup.apply(this, args)).then(function (result) {
-                if (args[0] === imei && self.dataImei !== previousData && self.dataImei && self.dataImei.deviceId === imei) self.isShowInputImei = false;
+                if (args[0] === imei && lastOwnResult && self.dataImei !== previousData && self.dataImei && self.dataImei.deviceId === imei) self.isShowInputImei = false;
                 return result;
               });
             };
@@ -85,7 +86,7 @@ final class WarrantyScript {
               trace.retries++;
               var self = this, previousData = this.dataImei;
               Promise.resolve().then(function () { refreshDeviceCache(); return lookup.call(self, imei); }).then(function () {
-                if (self.dataImei !== previousData && self.dataImei && self.dataImei.deviceId === imei) self.isShowInputImei = false;
+                if (lastOwnResult && self.dataImei !== previousData && self.dataImei && self.dataImei.deviceId === imei) self.isShowInputImei = false;
                 else popup.call(self);
               }, function () { popup.call(self); });
             };

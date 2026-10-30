@@ -9,7 +9,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 function setup({goodOrigin = true, goodPath = true, success = true, late = false, pagePath} = {}) {
   const calls = [], page = {dataImei: {}, isShowInputImei: late, $children: [], popups: 0,
     dataIMEI() {}, async applySecurityData(data) { if(!data.modelMatch){this.popupImei();return;}this.dataImei=data.mobileInfoRespVO||{};if(!this.dataImei.deviceId)this.popupImei(); }, popupImei() { this.popups++; this.isShowInputImei = true; },
-    async getSecurity(id) { calls.push(id); if (success) this.dataImei = {deviceId: id}; else this.popupImei(); }
+    async getSecurity(id) { calls.push(id); if (success) await this.applySecurityData({modelMatch:true,mobileInfoRespVO:{deviceId:id}}); else this.popupImei(); }
   };
   const location = {origin: goodOrigin ? 'https://rinsurance.finzfin.com' : 'https://example.com',
     pathname: pagePath || (goodPath ? '/insurance/screenSecurity/electronicCard/' : '/insurance/trade/'), href: 'page'};
@@ -55,7 +55,7 @@ function setup({goodOrigin = true, goodPath = true, success = true, late = false
   };
   throwingCache.run(); await throwingCache.page.getSecurity(); assert.deepEqual(throwingCache.calls, [imei]);
   const race = setup(); let finish;
-  race.page.getSecurity = async function(id) {race.calls.push(id); await new Promise(resolve => {finish=resolve;}); this.dataImei={deviceId:id};};
+  race.page.getSecurity = async function(id) {race.calls.push(id); await new Promise(resolve => {finish=resolve;}); await this.applySecurityData({modelMatch:true,mobileInfoRespVO:{deviceId:id}});};
   race.run(); const query = race.page.getSecurity(); race.page.dataImei={deviceId:imei}; race.page.popupImei();
   assert.equal(race.page.isShowInputImei, true); finish(); await query;
   assert.deepEqual(race.calls, [imei]); assert.equal(race.page.isShowInputImei, false);
@@ -69,7 +69,7 @@ function setup({goodOrigin = true, goodPath = true, success = true, late = false
   const afterInstallFailure = setup(); let attempts = 0;
   afterInstallFailure.page.getSecurity = async function(id) {
     afterInstallFailure.calls.push(id);
-    if (++attempts === 1) this.popupImei(); else this.dataImei = {deviceId:id};
+    if (++attempts === 1) this.popupImei(); else await this.applySecurityData({modelMatch:true,mobileInfoRespVO:{deviceId:id}});
   };
   afterInstallFailure.run(); await afterInstallFailure.page.getSecurity(); await tick();
   assert.deepEqual(afterInstallFailure.calls, [imei,imei]);
@@ -86,5 +86,12 @@ function setup({goodOrigin = true, goodPath = true, success = true, late = false
   const emptyFirst = setup(); emptyFirst.run();
   await emptyFirst.page.applySecurityData({modelMatch:true,mobileInfoRespVO:{}}); await tick();
   assert.deepEqual(emptyFirst.calls,[imei]); assert.equal(emptyFirst.page.dataImei.deviceId,imei);
+  const deniedAfterCache = setup();
+  deniedAfterCache.page.getSecurity = async function(id) {
+    await this.applySecurityData({modelMatch:true,mobileInfoRespVO:{deviceId:id}});
+    await this.applySecurityData({modelMatch:false});
+  };
+  deniedAfterCache.run(); await deniedAfterCache.page.getSecurity();
+  assert.equal(deniedAfterCache.page.isShowInputImei,true); // A fresh official rejection must remain visible.
   console.log('PASS: warranty lookup origin/path, real-device fallback, explicit user choice, server rejection, stale device caches and late popup race');
 })().catch(error => { console.error(error); process.exitCode = 1; });
