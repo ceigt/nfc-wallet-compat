@@ -47,7 +47,12 @@ final class WarrantyCompat {
             Method method = callback.getDeclaredMethod("doJSCallback", boolean.class, int.class,
                     JSONObject.class, String.class, boolean.class);
             // Keep the statistics call visible even if the app was previously AOT compiled.
-            if (!api.deoptimize(method)) throw new IllegalStateException("Warranty caller deoptimization failed");
+            if (!api.deoptimize(method)) throw new IllegalStateException("Warranty statistics caller deoptimization failed");
+            for (Method caller : callback.getDeclaredMethods()) {
+                String name = caller.getName();
+                if ("call".equals(name) || "callWithErrorCode".equals(name) || "invokeJsCallback".equals(name))
+                    if (!api.deoptimize(caller)) throw new IllegalStateException("Warranty bridge caller deoptimization failed");
+            }
             hooks.add(api.hook(method).setId("wallet.warranty-bridge").intercept(chain -> {
                 Repair repair = null;
                 try { repair = prepare(loader, chain); }
