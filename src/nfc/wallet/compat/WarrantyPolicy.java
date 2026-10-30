@@ -4,14 +4,15 @@ import java.net.URI;
 
 final class WarrantyPolicy {
     static boolean allowed(String url, String method) {
-        if (!"getDeviceInfo".equals(method) && !"getBaseDeviceInfo".equals(method)) return false;
+        if (!"getDeviceInfo".equals(method) && !"getBaseDeviceInfo".equals(method) && !"getHeader".equals(method)) return false;
         if (url == null) return false;
         try {
             URI page = new URI(url);
             return "https".equalsIgnoreCase(page.getScheme())
                     && "rinsurance.finzfin.com".equalsIgnoreCase(page.getHost())
                     && page.getRawUserInfo() == null && (page.getPort() == -1 || page.getPort() == 443)
-                    && "/insurance/screenSecurity/electronicCard/".equals(page.getRawPath())
+                    && ("/insurance/screenSecurity/electronicCard/".equals(page.getRawPath())
+                        || "/insurance/screenSecurity/screenProduct/".equals(page.getRawPath()))
                     && (page.getRawFragment() == null || page.getRawFragment().isEmpty());
         } catch (Exception invalid) { return false; }
     }
