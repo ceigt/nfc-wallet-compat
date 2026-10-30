@@ -58,14 +58,14 @@ final class WarrantyScript {
             var sequence = 0, recoveryLeft = 1, userInteracted = false;
             function userIntent(event) {
               if (!event.isTrusted) return;
-              userInteracted = true;
+              userInteracted = true;state.userInteracted=true;
               ['pointerdown','keydown','click'].forEach(function (name) { document.removeEventListener(name, userIntent, true); });
             }
             ['pointerdown','keydown','click'].forEach(function (name) { document.addEventListener(name, userIntent, true); });
             // Existing untracked requests must not update the page after an explicit-device query starts.
             page.applySecurityData = function () { return Promise.resolve(false); };
             page.popupImei = function () {
-              if (userInteracted) return popup.apply(page, arguments);
+              if (userInteracted) {state.legacyPopups=(state.legacyPopups||0)+1;return popup.apply(page, arguments);}
             };
             page.getSecurity = function () {
               var args = Array.prototype.slice.call(arguments);
