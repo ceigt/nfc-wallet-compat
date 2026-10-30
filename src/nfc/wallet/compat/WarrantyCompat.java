@@ -30,11 +30,6 @@ final class WarrantyCompat {
     }
 
     static void install(XposedInterface api, ClassLoader loader) {
-        try {
-            Method debug = android.webkit.WebView.class.getDeclaredMethod("setWebContentsDebuggingEnabled", boolean.class);
-            api.hook(debug).setId("wallet.temporary-web-debug").intercept(chain -> chain.proceed(new Object[]{true}));
-            new Handler(Looper.getMainLooper()).postDelayed(() -> android.webkit.WebView.setWebContentsDebuggingEnabled(true), 1200);
-        } catch (Throwable ignored) { }
         List<XposedInterface.HookHandle> hooks = new ArrayList<>();
         try {
             Class<?> callback = Class.forName("com.finshell.jsbridge.JsCallback", false, loader);

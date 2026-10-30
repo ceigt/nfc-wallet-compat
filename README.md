@@ -4,7 +4,7 @@
 
 本项目通过钱包兼容模块，帮助在类原生 Android 上安装的原版国内钱包使用手机内置 eSE 交通卡。当前已适配 **一加 Ace 3（PJE110）/ AlphaDroid 4.7 / Android 16**，使用原版一加／OPPO 钱包完成深圳地铁交通卡刷卡。
 
-当前版本 **0.6.1**，包名 **`nfc.wallet.compat`**，使用 **libxposed API 102**。这是针对特定手机与系统组合的兼容项目，不是通用 NFC 修复包，也不是一加、OPPO、支付宝或交通卡发行方的官方项目。
+当前版本 **0.6.2**，包名 **`nfc.wallet.compat`**，使用 **libxposed API 102**。这是针对特定手机与系统组合的兼容项目，不是通用 NFC 修复包，也不是一加、OPPO、支付宝或交通卡发行方的官方项目。
 
 **刷交通卡请将默认 NFC 付款应用设为“钱包”，并且只启用一个钱包兼容模块。**
 
@@ -50,7 +50,7 @@ APK 的最低 Android 版本为 9，但 NFC 路由适配代码只在 `PJE110`、
 
 ## 官方保修与电池换新
 
-0.6.1 增加原版钱包 5.51.5 的设备识别兼容。在已适配的一加 Ace 3 上，进入“官方保修 → 电池换新”，可以使用本机真实 IMEI 查询并显示机型。模块读取硬件 IMEI，不需要手填标识，也不在安装包中保存个人 IMEI。
+0.6.1 增加原版钱包 5.51.5 的设备识别兼容，0.6.2 修复旧设备信息缓存导致的间歇识别失败。在已适配的一加 Ace 3 上，进入“官方保修 → 电池换新”，可以使用本机真实 IMEI 查询并显示机型。模块读取硬件 IMEI，不需要手填标识，也不在安装包中保存个人 IMEI。
 
 这项功能需要钱包拥有设备标识读取权限。使用前可在电脑 ADB 中执行：
 
@@ -59,6 +59,8 @@ adb shell "su -c 'cmd appops set com.finshell.wallet READ_DEVICE_IDENTIFIERS all
 ```
 
 该系统授权适用于钱包应用整体。模块的回传范围限定于 `rinsurance.finzfin.com` 的官方保修和电池产品两个页面，并检查钱包证书、UID、版本以及设备型号。模块保持设备信息回传的桥接统计和原生共享缓存中的原始脱敏值，不记录 IMEI。官方保修页自动识别失败时，用本机真实 IMEI 重试官网自身的查询；手动查询其他设备时保留用户输入。
+
+0.6.2 会在确认当前官方页面完成加载后启用自动重查，不再依赖首次设备信息回调。若网页桥接缓存中的设备信息不属于本机，会按需刷新 `getDeviceInfo`、`getBaseDeviceInfo`、`getHeader` 三项内存及网页存储缓存。账号令牌等其他缓存项不在刷新范围内。这样也能处理钱包冷启动后仍残留全零设备信息的情况。
 
 授权后重新打开钱包。更新模块仍按安装步骤整机重启。若不需要该识别功能，可以恢复默认权限：
 
@@ -96,6 +98,7 @@ adb shell "su -c 'cmd appops set com.finshell.wallet READ_DEVICE_IDENTIFIERS def
 
 截至 2026-10-30：
 
+- **0.6.2 稳定性修复：** 针对旧设备信息缓存、已完成加载但回调来源尚未更新的页面及迟到弹窗增加恢复处理；自动检查覆盖缓存失效、保留其他缓存、手动查询和服务器拒绝。连续冷启动与模拟旧缓存的实机结果随 Release 验证记录提供。
 - **0.6.1 新增复核：** GitHub Actions 完成策略、拦截链和网页回退测试及 APK 构建；在适配设备上，官方保修和电池换新页面无需手动输入，显示机型与硬件 IMEI 一致。NFC／eSE 路由实现沿用 0.6.0；本次更新后的实体过闸仍需现场验证。
 
 - **0.6.0 已检查：** 三个作用域实际通过 API 102 加载；钱包主界面和现有深圳通互联互通卡页面正常；显示“靠近读卡器”；四条交通卡专用路由正常；三次冷启动通过，检查期间未发现钱包、NFC 或安全芯片相关崩溃。
@@ -153,9 +156,9 @@ $java = 'C:\Java\jdk-17\bin'
   -SigningKey 'C:\Signing\nfc-wallet-compat.p12' `
   -PasswordFile 'C:\Signing\store-password.txt' `
   -KeyAlias 'nfc-wallet-compat' `
-  -OutputApk '.\nfc-wallet-compat-0.6.1.apk'
+  -OutputApk '.\nfc-wallet-compat-0.6.2.apk'
 
-python .\verify-apk.py .\nfc-wallet-compat-0.6.1.apk
+python .\verify-apk.py .\nfc-wallet-compat-0.6.2.apk
 ```
 
 GitHub Actions 会在推送后运行检查并生成未签名 APK，产物包含源提交号及 SHA-256。下载构建产物后需要签名才能安装。构建任务不接触设备或个人 IMEI，发布签名私钥不上传 GitHub。

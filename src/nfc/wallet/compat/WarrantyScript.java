@@ -15,16 +15,16 @@ final class WarrantyScript {
           var imei = '__DEVICE_IMEI__', tries = 0, href = location.href;
           function refreshDeviceCache() {
             try {
-            var bridge = window.RainbowBridge;
-            if (!bridge || typeof bridge.getCache !== 'function' ||
-                typeof bridge.removeMemoryCache !== 'function' || typeof bridge.removeStorageCache !== 'function') return;
-            ['getDeviceInfo', 'getBaseDeviceInfo', 'getHeader'].forEach(function (method) {
-              var data = bridge.getCache(method);
-              if (data && (data.imei !== imei || (method === 'getHeader' && data.id !== imei))) {
-                bridge.removeMemoryCache(method);
-                bridge.removeStorageCache(method);
-              }
-            });
+              var bridge = window.RainbowBridge;
+              if (!bridge || typeof bridge.getCache !== 'function' ||
+                  typeof bridge.removeMemoryCache !== 'function' || typeof bridge.removeStorageCache !== 'function') return;
+              ['getDeviceInfo', 'getBaseDeviceInfo', 'getHeader'].forEach(function (method) {
+                var data = bridge.getCache(method);
+                if (data && (data.imei !== imei || (method === 'getHeader' && data.id !== imei))) {
+                  bridge.removeMemoryCache(method);
+                  bridge.removeStorageCache(method);
+                }
+              });
             } catch (ignored) { }
           }
           refreshDeviceCache();
@@ -53,18 +53,18 @@ final class WarrantyScript {
               var args = Array.prototype.slice.call(arguments);
               if (!args[0]) args[0] = imei;
               refreshDeviceCache();
-              var self = this;
+              var self = this, previousData = this.dataImei;
               return Promise.resolve(lookup.apply(this, args)).then(function (result) {
-                if (args[0] === imei && self.dataImei && self.dataImei.deviceId === imei) self.isShowInputImei = false;
+                if (args[0] === imei && self.dataImei !== previousData && self.dataImei && self.dataImei.deviceId === imei) self.isShowInputImei = false;
                 return result;
               });
             };
             page.popupImei = function () {
               if (!initialLookupPending) return popup.apply(this, arguments);
               initialLookupPending = false;
-              var self = this;
+              var self = this, previousData = this.dataImei;
               Promise.resolve().then(function () { refreshDeviceCache(); return lookup.call(self, imei); }).then(function () {
-                if (self.dataImei && self.dataImei.deviceId === imei) self.isShowInputImei = false;
+                if (self.dataImei !== previousData && self.dataImei && self.dataImei.deviceId === imei) self.isShowInputImei = false;
                 else popup.call(self);
               }, function () { popup.call(self); });
             };

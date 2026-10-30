@@ -6,13 +6,13 @@ const source = fs.readFileSync(path.join(__dirname, '../src/nfc/wallet/compat/Wa
 const script = source.match(/SCRIPT = """([\s\S]*?)""";/)[1].replaceAll('__DEVICE_IMEI__', '490154203237518');
 const imei = '490154203237518'; // Public Luhn example.
 const tick = () => new Promise(resolve => setImmediate(resolve));
-function setup({goodOrigin = true, goodPath = true, success = true, late = false} = {}) {
+function setup({goodOrigin = true, goodPath = true, success = true, late = false, pagePath} = {}) {
   const calls = [], page = {dataImei: {}, isShowInputImei: late, $children: [], popups: 0,
     dataIMEI() {}, popupImei() { this.popups++; this.isShowInputImei = true; },
     async getSecurity(id) { calls.push(id); if (success) this.dataImei = {deviceId: id}; else this.popupImei(); }
   };
   const location = {origin: goodOrigin ? 'https://rinsurance.finzfin.com' : 'https://example.com',
-    pathname: goodPath ? '/insurance/screenSecurity/electronicCard/' : '/insurance/trade/', href: 'page'};
+    pathname: pagePath || (goodPath ? '/insurance/screenSecurity/electronicCard/' : '/insurance/trade/'), href: 'page'};
   const window = {$nuxt: {$children: [page]}};
   const context = vm.createContext({window, location, setTimeout, Set, Promise});
   return {calls, page, window, run() { vm.runInContext(script, context); }};
@@ -58,5 +58,12 @@ function setup({goodOrigin = true, goodPath = true, success = true, late = false
   race.run(); const query = race.page.getSecurity(); race.page.popupImei();
   assert.equal(race.page.isShowInputImei, true); finish(); await query;
   assert.deepEqual(race.calls, [imei]); assert.equal(race.page.isShowInputImei, false);
+  const rejectedOldData = setup({success: false}); rejectedOldData.page.dataImei = {deviceId: imei};
+  rejectedOldData.run(); await rejectedOldData.page.getSecurity();
+  assert.equal(rejectedOldData.page.isShowInputImei, true); // Old valid data must not hide a new server rejection.
+  const battery = setup({pagePath: '/insurance/screenSecurity/screenProduct/'});
+  const batteryLookup = battery.page.getSecurity; let batteryInvalidated = 0;
+  battery.window.RainbowBridge = {getCache(){return {imei:'000000000000000'};},removeMemoryCache(){batteryInvalidated++;},removeStorageCache(){batteryInvalidated++;}};
+  battery.run(); assert.equal(battery.page.getSecurity, batteryLookup); assert.equal(batteryInvalidated,6);
   console.log('PASS: warranty lookup origin/path, real-device fallback, explicit user choice, server rejection, stale device caches and late popup race');
 })().catch(error => { console.error(error); process.exitCode = 1; });
