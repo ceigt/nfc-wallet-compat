@@ -56,7 +56,7 @@ function setup({goodOrigin = true, goodPath = true, success = true, late = false
   throwingCache.run(); await throwingCache.page.getSecurity(); assert.deepEqual(throwingCache.calls, [imei]);
   const race = setup(); let finish;
   race.page.getSecurity = async function(id) {race.calls.push(id); await new Promise(resolve => {finish=resolve;}); this.dataImei={deviceId:id};};
-  race.run(); const query = race.page.getSecurity(); race.page.popupImei();
+  race.run(); const query = race.page.getSecurity(); race.page.dataImei={deviceId:imei}; race.page.popupImei();
   assert.equal(race.page.isShowInputImei, true); finish(); await query;
   assert.deepEqual(race.calls, [imei]); assert.equal(race.page.isShowInputImei, false);
   const rejectedOldData = setup({success: false}); rejectedOldData.page.dataImei = {deviceId: imei};
@@ -66,5 +66,13 @@ function setup({goodOrigin = true, goodPath = true, success = true, late = false
   const batteryLookup = battery.page.getSecurity; let batteryInvalidated = 0;
   battery.window.RainbowBridge = {getCache(){return {imei:'000000000000000'};},removeMemoryCache(){batteryInvalidated++;},removeStorageCache(){batteryInvalidated++;}};
   battery.run(); assert.equal(battery.page.getSecurity, batteryLookup); assert.equal(batteryInvalidated,6);
+  const afterInstallFailure = setup(); let attempts = 0;
+  afterInstallFailure.page.getSecurity = async function(id) {
+    afterInstallFailure.calls.push(id);
+    if (++attempts === 1) this.popupImei(); else this.dataImei = {deviceId:id};
+  };
+  afterInstallFailure.run(); await afterInstallFailure.page.getSecurity(); await tick();
+  assert.deepEqual(afterInstallFailure.calls, [imei,imei]);
+  assert.equal(afterInstallFailure.page.isShowInputImei,false); // Failure after adapter installation still gets one retry.
   console.log('PASS: warranty lookup origin/path, real-device fallback, explicit user choice, server rejection, stale device caches and late popup race');
 })().catch(error => { console.error(error); process.exitCode = 1; });
