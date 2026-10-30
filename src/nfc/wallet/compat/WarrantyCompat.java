@@ -69,7 +69,7 @@ final class WarrantyCompat {
                     if (loggedRepair.compareAndSet(false, true)) WalletHooks.log(api,
                             "Verified warranty page received real device IMEI; identifiers are not logged");
                     Object result = chain.proceed(args);
-                    try { schedule(api, loader, chain.getThisObject()); }
+                    try { schedule(api, loader, chain.getThisObject(), repair.patched.optString("imei")); }
                     catch (Throwable ignored) { }
                     return result;
                 } finally {
@@ -109,18 +109,7 @@ final class WarrantyCompat {
         return new Repair(original, patched);
     }
 
-    private static void schedule(XposedInterface api, ClassLoader loader, Object callback) throws Throwable {
-        String method = (String) Reflect.get(callback, "mMethodName", String.class);
-        String url = (String) Reflect.call(callback, "getUrl", String.class);
-        if (!WarrantyPolicy.allowed(url, method)
-                || !NfcPolicy.supportedDevice(android.os.Build.MODEL, android.os.Build.VERSION.SDK_INT)) return;
-        Class<?> util = Class.forName("com.finshell.common.util.d", false, loader);
-        Context context = (Context) Reflect.invoke(util.getDeclaredMethod("c"), null);
-        if (context == null || !WalletIdentity.matches(context, android.os.Process.myUid())
-                || context.getPackageManager().getPackageInfo(CompatPolicy.WALLET, 0).versionCode != 551053) return;
-        TelephonyManager tm = context.getSystemService(TelephonyManager.class);
-        String imei = tm == null ? null : tm.getImei(0);
-        if (!WarrantyPolicy.validImei(imei)) return;
+    private static void schedule(XposedInterface api, ClassLoader loader, Object callback, String imei) throws Throwable {
         Object manager = Reflect.get(callback, "fragmentWebManager",
                 Class.forName("com.finshell.jsbridge.FragmentWebManager", false, loader));
         Method getter = manager.getClass().getMethod("getCallJsCallback");
