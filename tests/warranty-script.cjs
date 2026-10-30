@@ -8,7 +8,7 @@ const imei = '490154203237518'; // Public Luhn example.
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function setup({goodOrigin = true, goodPath = true, success = true, late = false, pagePath} = {}) {
   const calls = [], page = {dataImei: {}, isShowInputImei: late, $children: [], popups: 0,
-    dataIMEI() {}, popupImei() { this.popups++; this.isShowInputImei = true; },
+    dataIMEI() {}, async applySecurityData(data) { if(!data.modelMatch){this.popupImei();return;}this.dataImei=data.mobileInfoRespVO||{};if(!this.dataImei.deviceId)this.popupImei(); }, popupImei() { this.popups++; this.isShowInputImei = true; },
     async getSecurity(id) { calls.push(id); if (success) this.dataImei = {deviceId: id}; else this.popupImei(); }
   };
   const location = {origin: goodOrigin ? 'https://rinsurance.finzfin.com' : 'https://example.com',
@@ -74,5 +74,17 @@ function setup({goodOrigin = true, goodPath = true, success = true, late = false
   afterInstallFailure.run(); await afterInstallFailure.page.getSecurity(); await tick();
   assert.deepEqual(afterInstallFailure.calls, [imei,imei]);
   assert.equal(afterInstallFailure.page.isShowInputImei,false); // Failure after adapter installation still gets one retry.
+  const outOfOrder = setup(); outOfOrder.run();
+  await outOfOrder.page.applySecurityData({modelMatch:true,mobileInfoRespVO:{deviceId:imei,model:'valid'}});
+  await outOfOrder.page.applySecurityData({modelMatch:true,mobileInfoRespVO:{deviceId:'000000000000000'}});
+  await outOfOrder.page.applySecurityData({modelMatch:true,mobileInfoRespVO:{}});
+  assert.equal(outOfOrder.page.dataImei.deviceId,imei); assert.equal(outOfOrder.page.isShowInputImei,false);
+  await outOfOrder.page.applySecurityData({modelMatch:false}); assert.equal(outOfOrder.page.isShowInputImei,true);
+  const explicit = setup(); explicit.run(); await explicit.page.getSecurity('another-device');
+  await explicit.page.applySecurityData({modelMatch:true,mobileInfoRespVO:{}});
+  assert.equal(explicit.page.isShowInputImei,true); assert.deepEqual(explicit.calls,['another-device']);
+  const emptyFirst = setup(); emptyFirst.run();
+  await emptyFirst.page.applySecurityData({modelMatch:true,mobileInfoRespVO:{}}); await tick();
+  assert.deepEqual(emptyFirst.calls,[imei]); assert.equal(emptyFirst.page.dataImei.deviceId,imei);
   console.log('PASS: warranty lookup origin/path, real-device fallback, explicit user choice, server rejection, stale device caches and late popup race');
 })().catch(error => { console.error(error); process.exitCode = 1; });

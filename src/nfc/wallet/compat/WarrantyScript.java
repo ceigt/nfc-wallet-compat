@@ -41,7 +41,7 @@ final class WarrantyScript {
               if (!node || seen.has(node)) continue;
               seen.add(node);
               if (typeof node.getSecurity === 'function' && typeof node.popupImei === 'function' &&
-                  typeof node.dataIMEI === 'function' && typeof node.isShowInputImei === 'boolean' &&
+                  typeof node.dataIMEI === 'function' && typeof node.applySecurityData === 'function' && typeof node.isShowInputImei === 'boolean' &&
                   node.dataImei && typeof node.dataImei === 'object') { page = node; break; }
               if (Array.isArray(node.$children)) pending.push.apply(pending, node.$children);
             }
@@ -51,15 +51,27 @@ final class WarrantyScript {
               return;
             }
             trace.phase='attached';
-            var apply = page.applySecurityData;
-            if (typeof apply === 'function') page.applySecurityData=function(data){trace.responses.push({modelMatch:!!(data&&data.modelMatch),deviceMatches:!!(data&&data.mobileInfoRespVO&&data.mobileInfoRespVO.deviceId===imei)});if(trace.responses.length>4)trace.responses.shift();return apply.apply(this,arguments);};
-            var lookup = page.getSecurity, popup = page.popupImei, fallbackAvailable = true;
+            var lookup = page.getSecurity, popup = page.popupImei, apply = page.applySecurityData;
+            var fallbackAvailable = true, manualOther = false;
+            page.applySecurityData = function (data) {
+              var id = data && data.mobileInfoRespVO && data.mobileInfoRespVO.deviceId;
+              var unknown = !!(data && data.modelMatch && (!id || /^0+$/.test(String(id))));
+              trace.responses.push({modelMatch:!!(data&&data.modelMatch),deviceMatches:id===imei,unknown:unknown});
+              if(trace.responses.length>4)trace.responses.shift();
+              if (!manualOther && unknown) {
+                trace.filtered = (trace.filtered || 0) + 1;
+                if (!this.dataImei || this.dataImei.deviceId !== imei) this.popupImei();
+                return Promise.resolve(false);
+              }
+              return apply.apply(this, arguments);
+            };
             page.getSecurity = function () {
               trace.queries++;
               var args = Array.prototype.slice.call(arguments);
               if (/^0+$/.test(String(args[0]))) trace.zeroArguments++;
               if (!args[0] || /^0+$/.test(String(args[0]))) args[0] = imei;
-              if (args[0] !== imei) fallbackAvailable = false;
+              manualOther = args[0] !== imei;
+              if (manualOther) fallbackAvailable = false;
               refreshDeviceCache();
               var self = this, previousData = this.dataImei;
               return Promise.resolve(lookup.apply(this, args)).then(function (result) {

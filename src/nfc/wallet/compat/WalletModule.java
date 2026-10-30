@@ -8,7 +8,7 @@ public final class WalletModule extends XposedModule {
     private final AtomicBoolean installed = new AtomicBoolean();
 
     @Override public void onModuleLoaded(ModuleLoadedParam param) {
-        log(Log.INFO, "NfcWalletCompat", "0.6.2-rc5 loaded; API=" + getApiVersion()
+        log(Log.INFO, "NfcWalletCompat", "0.6.2-rc6 loaded; API=" + getApiVersion()
                 + "; process=" + param.getProcessName());
     }
 
