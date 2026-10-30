@@ -12,7 +12,14 @@
 
 在 [Releases](https://github.com/ceigt/nfc-wallet-compat/releases) 下载 APK。源码编译方式见下文。
 
-本项目不提供钱包、账号中心等厂商应用安装包，使用者需要自行准备适合设备的正版应用。
+适配时使用的原版安装包另存于 [钱包与账号中心安装包](https://github.com/ceigt/nfc-wallet-compat/releases/tag/vendor-apks-20261030)：
+
+| 应用 | 版本 | 下载 |
+| --- | --- | --- |
+| 钱包 `com.finshell.wallet` | 5.51.5（551053） | [APK](https://github.com/ceigt/nfc-wallet-compat/releases/download/vendor-apks-20261030/com.finshell.wallet-5.51.5.apk) |
+| 账号中心 `com.oplus.account` | CN_8.44.10（84410） | [APK](https://github.com/ceigt/nfc-wallet-compat/releases/download/vendor-apks-20261030/com.oplus.account-CN_8.44.10.apk) |
+
+两份均为从已适配设备提取的完整单 APK，保留原厂签名，SHA-256 与此前保存的原始安装包一致；不含登录状态、账号令牌、交通卡或应用数据。首次安装需要自行登录，开卡与迁移仍按官方流程操作。Release 附带校验清单及 APK 版本、签名记录。安装包含 arm64-v8a 原生库，仅在上述适配环境验证，不代表其他系统均可运行。
 
 ## 适用条件
 
@@ -30,7 +37,7 @@ APK 的最低 Android 版本为 9，但 NFC 路由适配代码只在 `PJE110`、
 
 ## 安装与使用
 
-1. 安装并准备好原版钱包及其需要的账号服务，自行完成账号登录。不要向他人提供密码或验证码。
+1. 安装上述账号中心和钱包原版 APK，自行完成账号登录。不要向他人提供密码或验证码。
 2. 安装本项目 APK，打开 LSPosed，启用 **NFC Wallet Compat**。
 3. 核对固定作用域，只有以下三项：
 
@@ -126,7 +133,7 @@ adb shell "su -c 'cmd appops set com.finshell.wallet READ_DEVICE_IDENTIFIERS def
 - 校验 NFC 接口、设备型号及路由归属后，将已知交通卡 AID 绑定到 eSE1；保留其他 AID，拒绝 SIM 路由冲突，绑定失败时尝试回滚。
 - 在安全芯片服务原本因已知 APDU 权限问题拒绝访问时，仅对**证书和调用 UID 均匹配的原版钱包、eSE1 终端**提供兼容处理。它会改变该已校验调用的访问判定，请在理解这一点后使用。
 
-未知接口不会猜测适配，可能需要后续针对性维护。交通卡、账户数据和厂商 APK 不随项目分发。
+未知接口不会猜测适配，可能需要后续针对性维护。交通卡和账户数据不随项目分发；厂商 APK 仅作为原版安装包单独存于 Release。
 
 ## 源码构建
 
@@ -191,4 +198,4 @@ verify-apk.py               APK 元数据与依赖边界检查
 - [libxposed API 文档](https://jingmatrix.github.io/libxposed-api/io/github/libxposed/api/package-summary.html)
 - [API 编译依赖来源](https://repo.maven.apache.org/maven2/io/github/libxposed/api/102.0.0/)
 
-钱包与账号应用、交通卡及相关商标属于各自权利人，不随本项目分发。
+钱包与账号应用、交通卡及相关商标属于各自权利人。Release 中保存的钱包与账号中心 APK 是原厂闭源安装包，不适用本项目的 Apache-2.0 源码许可证；本项目不提供其源码，也未修改或重新签名这些安装包。
