@@ -86,9 +86,18 @@ final class WarrantyCompat {
             if (!path.matches("/[A-Za-z0-9/_-]{1,150}")) return;
             Object value = chain.getArg(2);
             JSONObject data = value instanceof JSONObject ? (JSONObject) value : new JSONObject();
+            JSONObject request = new JSONObject((String) Reflect.get(cb, "param", String.class));
+            String target = "";
+            if (request.has("url")) {
+                java.net.URI uri = new java.net.URI(request.optString("url"));
+                if (uri.getHost() != null && uri.getHost().endsWith(".finzfin.com")) target = uri.getRawPath();
+            }
+            if (!target.matches("[/A-Za-z0-9_-]{0,180}")) target = "other";
+            JSONObject header = new JSONObject(request.optString("header", "{}"));
             WalletHooks.log(api, "Warranty bridge diagnostic: page=" + path + " method=" + name
                     + " success=" + chain.getArg(0) + " imeiValid=" + WarrantyPolicy.validImei(data.optString("imei"))
-                    + " hasBody=" + data.has("body"));
+                    + " hasBody=" + data.has("body") + " target=" + target
+                    + " requestIdValid=" + WarrantyPolicy.validImei(header.optString("id")));
         } catch (Throwable ignored) { }
     }
 
@@ -104,13 +113,16 @@ final class WarrantyCompat {
         if (context == null || !WalletIdentity.matches(context, android.os.Process.myUid())
                 || context.getPackageManager().getPackageInfo(CompatPolicy.WALLET, 0).versionCode != 551053) return null;
         JSONObject original = (JSONObject) chain.getArg(2);
-        if (!original.has("imei")) return null;
+        if (!original.has("imei") && !"getHeader".equals(method)) return null;
+        long started = (long) Reflect.get(callback, "apiStartTime", long.class);
+        if (System.currentTimeMillis() - started > 59000) return null;
         TelephonyManager tm = context.getSystemService(TelephonyManager.class);
         if (tm == null) return null;
         String imei = tm.getImei(0);
         if (!WarrantyPolicy.validImei(imei)) return null;
         JSONObject patched = new JSONObject(original.toString());
         patched.put("imei", imei);
+        if ("getHeader".equals(method)) patched.put("id", imei);
         return new Repair(original, patched);
     }
 }
