@@ -89,6 +89,11 @@ final class WarrantyCompat {
                         String imei = readImei(loader);
                         if (imei != null) {
                             view.evaluateJavascript(WarrantyScript.render(imei), null);
+                            for (long delay : new long[]{8000, 20000}) view.postDelayed(() -> {
+                                if (WarrantyPolicy.allowed(view.getUrl(), "getDeviceInfo")) view.evaluateJavascript(
+                                        "JSON.stringify(window.__nfcWarrantyOutcome||{phase:'missing'})",
+                                        value -> WalletHooks.log(api, "Warranty query outcome: " + value));
+                            }, delay);
                             if (loggedPage.compareAndSet(false, true)) WalletHooks.log(api,
                                     "Official warranty page fallback scheduled; current page verified");
                         }
