@@ -5,8 +5,8 @@ public class WarrantyPolicyTest {
         String page = "https://rinsurance.finzfin.com/insurance/screenSecurity/electronicCard/";
         assert WarrantyPolicy.allowed(page, "getDeviceInfo");
         assert WarrantyPolicy.allowed(page + "?channel=wallet", "getBaseDeviceInfo");
-        assert WarrantyPolicy.allowed(page, "getHeader");
-        assert WarrantyPolicy.allowed(page.replace("electronicCard", "screenProduct"), "getDeviceInfo");
+        assert !WarrantyPolicy.allowed(page, "getHeader");
+        assert !WarrantyPolicy.allowed(page.replace("electronicCard", "screenProduct"), "getDeviceInfo");
         assert !WarrantyPolicy.allowed(page.replace("electronicCard", "purchase"), "getDeviceInfo");
         assert !WarrantyPolicy.allowed(page, "getToken");
         assert !WarrantyPolicy.allowed(null, "getDeviceInfo");

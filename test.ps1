@@ -14,3 +14,6 @@ foreach ($test in 'PolicyTest','ProfileTest','BindingTest','HookFlowTest','Warra
     & "$JavaBin\java.exe" -ea -cp "$classes;$android;$api" "nfc.wallet.compat.$test"
     if ($LASTEXITCODE) { throw "$test failed" }
 }
+
+& node "$PSScriptRoot\tests\warranty-script.cjs"
+if ($LASTEXITCODE) { throw 'Warranty page fallback checks failed' }

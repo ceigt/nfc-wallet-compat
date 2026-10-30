@@ -1,128 +1,64 @@
 package nfc.wallet.compat;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.telephony.TelephonyManager;
 import io.github.libxposed.api.XposedInterface;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
-import org.json.JSONObject;
 
-/** Supplies real device identifiers only to the verified official warranty page. */
+/** Uses the official page's own lookup with the real device IMEI. */
 final class WarrantyCompat {
-    private static final ThreadLocal<Repair> active = new ThreadLocal<>();
-    private static final AtomicBoolean loggedRepair = new AtomicBoolean();
-    private static final AtomicBoolean loggedStatistics = new AtomicBoolean();
-    private static final AtomicBoolean loggedUnavailable = new AtomicBoolean();
-
-    private static final class Repair {
-        final JSONObject original;
-        final JSONObject patched;
-        Repair(JSONObject original, JSONObject patched) {
-            this.original = original;
-            this.patched = patched;
-        }
-    }
+    private static final AtomicBoolean logged = new AtomicBoolean();
+    private static final AtomicBoolean unavailable = new AtomicBoolean();
 
     static void install(XposedInterface api, ClassLoader loader) {
-        List<XposedInterface.HookHandle> hooks = new ArrayList<>();
         try {
             Class<?> callback = Class.forName("com.finshell.jsbridge.JsCallback", false, loader);
-            Method statistics = callback.getDeclaredMethod("postResult", String.class, String.class,
-                    String.class, JSONObject.class, long.class);
-            hooks.add(api.hook(statistics).setId("wallet.warranty-statistics").intercept(chain -> {
-                Repair repair = active.get();
-                if (repair == null || chain.getArg(3) != repair.patched) return chain.proceed();
-                Object[] args = chain.getArgs().toArray();
-                // Preserve the original privacy-redacted response in vendor statistics.
-                args[3] = repair.original;
-                if (loggedStatistics.compareAndSet(false, true)) WalletHooks.log(api,
-                        "Warranty statistics retained the original redacted identifiers");
-                return chain.proceed(args);
-            }));
             Method method = callback.getDeclaredMethod("doJSCallback", boolean.class, int.class,
-                    JSONObject.class, String.class, boolean.class);
-            // Keep the statistics call visible even if the app was previously AOT compiled.
-            if (!api.deoptimize(method)) throw new IllegalStateException("Warranty caller deoptimization failed");
-            hooks.add(api.hook(method).setId("wallet.warranty-bridge").intercept(chain -> {
-                diagnose(api, chain);
-                Repair repair = null;
-                try { repair = prepare(loader, chain); }
-                catch (Throwable failure) {
-                    if (loggedUnavailable.compareAndSet(false, true)) WalletHooks.log(api,
-                            "Warranty IMEI unavailable; check device-identifier access: " + failure.getClass().getSimpleName());
-                }
-                if (repair == null) return chain.proceed();
-                Repair previous = active.get();
-                active.set(repair);
-                Object[] args = chain.getArgs().toArray();
-                args[2] = repair.patched;
+                    org.json.JSONObject.class, String.class, boolean.class);
+            api.hook(method).setId("wallet.warranty-lookup").intercept(chain -> {
+                Object result = chain.proceed();
                 try {
-                    if (loggedRepair.compareAndSet(false, true)) WalletHooks.log(api,
-                            "Verified warranty page received real device IMEI; identifiers are not logged");
-                    return chain.proceed(args);
-                } finally {
-                    if (previous == null) active.remove();
-                    else active.set(previous);
+                    if (Boolean.TRUE.equals(chain.getArg(0))) schedule(api, loader, chain.getThisObject());
+                } catch (Throwable error) {
+                    if (unavailable.compareAndSet(false, true)) WalletHooks.log(api,
+                            "Warranty lookup unavailable: " + error.getClass().getSimpleName());
                 }
-            }));
-            WalletHooks.log(api, "Official warranty IMEI adapter installed; URL, Wallet signer and version guarded");
-        } catch (Throwable failure) {
-            for (XposedInterface.HookHandle hook : hooks) hook.unhook();
-            WalletHooks.log(api, "Warranty bridge interface unavailable: " + failure.getClass().getSimpleName());
+                return result;
+            });
+            WalletHooks.log(api, "Official warranty lookup adapter installed; page, signer and version guarded");
+        } catch (Throwable error) {
+            WalletHooks.log(api, "Warranty bridge unavailable: " + error.getClass().getSimpleName());
         }
     }
 
-    private static void diagnose(XposedInterface api, XposedInterface.Chain chain) {
-        try {
-            Object cb = chain.getThisObject();
-            String url = (String) Reflect.call(cb, "getUrl", String.class);
-            java.net.URI page = new java.net.URI(url);
-            if (!"rinsurance.finzfin.com".equals(page.getHost())) return;
-            String name = (String) Reflect.get(cb, "mMethodName", String.class);
-            if (!name.matches("[A-Za-z]{1,60}")) return;
-            String path = page.getRawPath();
-            if (!path.matches("/[A-Za-z0-9/_-]{1,150}")) return;
-            Object value = chain.getArg(2);
-            JSONObject data = value instanceof JSONObject ? (JSONObject) value : new JSONObject();
-            JSONObject request = new JSONObject((String) Reflect.get(cb, "param", String.class));
-            String target = "";
-            if (request.has("url")) {
-                java.net.URI uri = new java.net.URI(request.optString("url"));
-                if (uri.getHost() != null && uri.getHost().endsWith(".finzfin.com")) target = uri.getRawPath();
-            }
-            if (!target.matches("[/A-Za-z0-9_-]{0,180}")) target = "other";
-            JSONObject header = new JSONObject(request.optString("header", "{}"));
-            WalletHooks.log(api, "Warranty bridge diagnostic: page=" + path + " method=" + name
-                    + " success=" + chain.getArg(0) + " imeiValid=" + WarrantyPolicy.validImei(data.optString("imei"))
-                    + " hasBody=" + data.has("body") + " target=" + target
-                    + " requestIdValid=" + WarrantyPolicy.validImei(header.optString("id")));
-        } catch (Throwable ignored) { }
-    }
-
-    private static Repair prepare(ClassLoader loader, XposedInterface.Chain chain) throws Throwable {
-        if (!Boolean.TRUE.equals(chain.getArg(0)) || !(chain.getArg(2) instanceof JSONObject)) return null;
-        Object callback = chain.getThisObject();
+    private static void schedule(XposedInterface api, ClassLoader loader, Object callback) throws Throwable {
         String method = (String) Reflect.get(callback, "mMethodName", String.class);
         String url = (String) Reflect.call(callback, "getUrl", String.class);
         if (!WarrantyPolicy.allowed(url, method)
-                || !NfcPolicy.supportedDevice(android.os.Build.MODEL, android.os.Build.VERSION.SDK_INT)) return null;
+                || !NfcPolicy.supportedDevice(android.os.Build.MODEL, android.os.Build.VERSION.SDK_INT)) return;
         Class<?> util = Class.forName("com.finshell.common.util.d", false, loader);
         Context context = (Context) Reflect.invoke(util.getDeclaredMethod("c"), null);
         if (context == null || !WalletIdentity.matches(context, android.os.Process.myUid())
-                || context.getPackageManager().getPackageInfo(CompatPolicy.WALLET, 0).versionCode != 551053) return null;
-        JSONObject original = (JSONObject) chain.getArg(2);
-        if (!original.has("imei") && !"getHeader".equals(method)) return null;
-        long started = (long) Reflect.get(callback, "apiStartTime", long.class);
-        if (System.currentTimeMillis() - started > 59000) return null;
+                || context.getPackageManager().getPackageInfo(CompatPolicy.WALLET, 0).versionCode != 551053) return;
         TelephonyManager tm = context.getSystemService(TelephonyManager.class);
-        if (tm == null) return null;
-        String imei = tm.getImei(0);
-        if (!WarrantyPolicy.validImei(imei)) return null;
-        JSONObject patched = new JSONObject(original.toString());
-        patched.put("imei", imei);
-        if ("getHeader".equals(method)) patched.put("id", imei);
-        return new Repair(original, patched);
+        String imei = tm == null ? null : tm.getImei(0);
+        if (!WarrantyPolicy.validImei(imei)) return;
+        Object manager = Reflect.get(callback, "fragmentWebManager",
+                Class.forName("com.finshell.jsbridge.FragmentWebManager", false, loader));
+        Method getter = manager.getClass().getMethod("getCallJsCallback");
+        Object sink = Reflect.invoke(getter, manager);
+        if (sink == null) return;
+        Method send = sink.getClass().getMethod("onCallJsCallback", String.class);
+        String script = "javascript:" + WarrantyScript.render(imei);
+        new Handler(Looper.getMainLooper()).post(() -> {
+            try {
+                Reflect.invoke(send, sink, script);
+                if (logged.compareAndSet(false, true)) WalletHooks.log(api,
+                        "Official warranty explicit-device lookup scheduled; identifiers are not logged");
+            } catch (Throwable ignored) { }
+        });
     }
 }
