@@ -46,6 +46,7 @@ final class WarrantyCompat {
             // Keep the statistics call visible even if the app was previously AOT compiled.
             if (!api.deoptimize(method)) throw new IllegalStateException("Warranty caller deoptimization failed");
             hooks.add(api.hook(method).setId("wallet.warranty-bridge").intercept(chain -> {
+                diagnose(api, chain);
                 Repair repair = null;
                 try { repair = prepare(loader, chain); }
                 catch (Throwable failure) {
@@ -71,6 +72,24 @@ final class WarrantyCompat {
             for (XposedInterface.HookHandle hook : hooks) hook.unhook();
             WalletHooks.log(api, "Warranty bridge interface unavailable: " + failure.getClass().getSimpleName());
         }
+    }
+
+    private static void diagnose(XposedInterface api, XposedInterface.Chain chain) {
+        try {
+            Object cb = chain.getThisObject();
+            String url = (String) Reflect.call(cb, "getUrl", String.class);
+            java.net.URI page = new java.net.URI(url);
+            if (!"rinsurance.finzfin.com".equals(page.getHost())) return;
+            String name = (String) Reflect.get(cb, "mMethodName", String.class);
+            if (!name.matches("[A-Za-z]{1,60}")) return;
+            String path = page.getRawPath();
+            if (!path.matches("/[A-Za-z0-9/_-]{1,150}")) return;
+            Object value = chain.getArg(2);
+            JSONObject data = value instanceof JSONObject ? (JSONObject) value : new JSONObject();
+            WalletHooks.log(api, "Warranty bridge diagnostic: page=" + path + " method=" + name
+                    + " success=" + chain.getArg(0) + " imeiValid=" + WarrantyPolicy.validImei(data.optString("imei"))
+                    + " hasBody=" + data.has("body"));
+        } catch (Throwable ignored) { }
     }
 
     private static Repair prepare(ClassLoader loader, XposedInterface.Chain chain) throws Throwable {
