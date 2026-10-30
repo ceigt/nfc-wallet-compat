@@ -13,6 +13,7 @@ import org.json.JSONObject;
 final class WarrantyCompat {
     private static final ThreadLocal<Repair> active = new ThreadLocal<>();
     private static final AtomicBoolean loggedRepair = new AtomicBoolean();
+    private static final AtomicBoolean loggedStatistics = new AtomicBoolean();
     private static final AtomicBoolean loggedUnavailable = new AtomicBoolean();
 
     private static final class Repair {
@@ -36,10 +37,14 @@ final class WarrantyCompat {
                 Object[] args = chain.getArgs().toArray();
                 // Preserve the original privacy-redacted response in vendor statistics.
                 args[3] = repair.original;
+                if (loggedStatistics.compareAndSet(false, true)) WalletHooks.log(api,
+                        "Warranty statistics retained the original redacted identifiers");
                 return chain.proceed(args);
             }));
             Method method = callback.getDeclaredMethod("doJSCallback", boolean.class, int.class,
                     JSONObject.class, String.class, boolean.class);
+            // Keep the statistics call visible even if the app was previously AOT compiled.
+            if (!api.deoptimize(method)) throw new IllegalStateException("Warranty caller deoptimization failed");
             hooks.add(api.hook(method).setId("wallet.warranty-bridge").intercept(chain -> {
                 Repair repair = null;
                 try { repair = prepare(loader, chain); }
