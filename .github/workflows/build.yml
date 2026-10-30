@@ -1,0 +1,51 @@
+name: Build module
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK packages
+        run: |
+          $sdk = $env:ANDROID_HOME
+          if (-not $sdk) { $sdk = $env:ANDROID_SDK_ROOT }
+          if (-not $sdk) { throw 'Android SDK is unavailable' }
+          & "$sdk\cmdline-tools\latest\bin\sdkmanager.bat" 'platforms;android-36' 'build-tools;36.0.0'
+          if ($LASTEXITCODE) { throw 'SDK installation failed' }
+          "MODULE_ANDROID_SDK=$sdk" >> $env:GITHUB_ENV
+      - name: Test
+        run: |
+          .\test.ps1 -AndroidSdk $env:MODULE_ANDROID_SDK -JavaBin "$env:JAVA_HOME\bin"
+      - name: Build unsigned APK
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          .\build.ps1 -Unsigned -AndroidSdk $env:MODULE_ANDROID_SDK -JavaBin "$env:JAVA_HOME\bin" -OutputApk "$pwd\dist\nfc-wallet-compat-unsigned.apk"
+      - name: Verify APK structure
+        run: |
+          python .\verify-apk.py .\dist\nfc-wallet-compat-unsigned.apk
+          if ($LASTEXITCODE) { throw 'APK verification failed' }
+          (Get-FileHash .\dist\nfc-wallet-compat-unsigned.apk -Algorithm SHA256).Hash.ToLower() | Set-Content .\dist\unsigned.sha256
+          git rev-parse HEAD | Set-Content .\dist\source-commit.txt
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: nfc-wallet-compat-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

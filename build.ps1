@@ -1,10 +1,11 @@
 param(
     [Parameter(Mandatory=$true)][string]$AndroidSdk,
     [Parameter(Mandatory=$true)][string]$JavaBin,
-    [Parameter(Mandatory=$true)][string]$SigningKey,
-    [Parameter(Mandatory=$true)][string]$PasswordFile,
+    [Parameter(Mandatory=$true,ParameterSetName='Signed')][string]$SigningKey,
+    [Parameter(Mandatory=$true,ParameterSetName='Signed')][string]$PasswordFile,
+    [Parameter(Mandatory=$true,ParameterSetName='Unsigned')][switch]$Unsigned,
     [string]$KeyAlias = 'wallet-local',
-    [string]$OutputApk = (Join-Path $PSScriptRoot 'nfc-wallet-compat-0.6.0.apk')
+    [string]$OutputApk = (Join-Path $PSScriptRoot 'nfc-wallet-compat-0.6.1.apk')
 )
 $ErrorActionPreference = 'Stop'
 $tools = Join-Path $AndroidSdk 'build-tools\36.0.0'
@@ -34,6 +35,11 @@ try {
 } finally { $archive.Dispose() }
 & "$tools\zipalign.exe" -f -p 4 "$build\unsigned.apk" "$build\aligned.apk"
 if ($LASTEXITCODE) { throw 'zipalign failed' }
+if ($Unsigned) {
+    Copy-Item -LiteralPath "$build\aligned.apk" -Destination $OutputApk
+    Write-Output "Unsigned build ready: $OutputApk"
+    exit 0
+}
 & "$JavaBin\java.exe" -jar "$tools\lib\apksigner.jar" sign --ks $SigningKey --ks-key-alias $KeyAlias --ks-pass "file:$PasswordFile" --out $OutputApk "$build\aligned.apk"
 if ($LASTEXITCODE) { throw 'signing failed' }
 & "$JavaBin\java.exe" -jar "$tools\lib\apksigner.jar" verify --verbose $OutputApk

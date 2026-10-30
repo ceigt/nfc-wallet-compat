@@ -8,7 +8,7 @@ public final class WalletModule extends XposedModule {
     private final AtomicBoolean installed = new AtomicBoolean();
 
     @Override public void onModuleLoaded(ModuleLoadedParam param) {
-        log(Log.INFO, "NfcWalletCompat", "0.6.0 loaded; API=" + getApiVersion()
+        log(Log.INFO, "NfcWalletCompat", "0.6.1 loaded; API=" + getApiVersion()
                 + "; process=" + param.getProcessName());
     }
 
@@ -20,7 +20,10 @@ public final class WalletModule extends XposedModule {
         try {
             if ("com.android.nfc".equals(pkg)) NfcRouteCompat.install(this, param.getClassLoader());
             else if ("com.android.se".equals(pkg)) SeAccessCompat.install(this, param.getClassLoader());
-            else WalletHooks.install(this, param.getClassLoader());
+            else {
+                WalletHooks.install(this, param.getClassLoader());
+                WarrantyCompat.install(this, param.getClassLoader());
+            }
         } catch (Throwable error) {
             log(Log.ERROR, "NfcWalletCompat", "Adapter inactive: " + pkg, error);
         }
