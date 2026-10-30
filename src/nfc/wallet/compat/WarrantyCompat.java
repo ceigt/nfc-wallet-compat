@@ -13,6 +13,7 @@ import org.json.JSONObject;
 
 /** Supplies real device identifiers only to the verified official warranty page. */
 final class WarrantyCompat {
+    private static final java.util.Set<String> diagnosed = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static final ThreadLocal<Repair> active = new ThreadLocal<>();
     private static final AtomicBoolean loggedFallback = new AtomicBoolean();
     private static final AtomicBoolean loggedRepair = new AtomicBoolean();
@@ -53,7 +54,21 @@ final class WarrantyCompat {
                 if ("call".equals(name) || "callWithErrorCode".equals(name) || "invokeJsCallback".equals(name))
                     if (!api.deoptimize(caller)) throw new IllegalStateException("Warranty bridge caller deoptimization failed");
             }
+            // Reflective bridge entries and the cached-result path can inline the callback chain.
+            for (String entry : new String[]{"com.finshell.webview.jsmethod.JSCommondMethod#getDeviceInfo",
+                    "com.finshell.webview.jsmethod.JSInterfaceMethod#getBaseDeviceInfo",
+                    "com.finshell.jspai.JSCommondMethod#getHeader"}) {
+                String[] parts = entry.split("#");
+                Method caller = Class.forName(parts[0], false, loader).getDeclaredMethod(parts[1], JSONObject.class, callback);
+                if (!api.deoptimize(caller)) throw new IllegalStateException("Warranty bridge entry deoptimization failed");
+            }
+            Class<?> dispatcher = Class.forName("com.finshell.jsbridge.JsCallJava", false, loader);
+            for (Method caller : dispatcher.getDeclaredMethods()) {
+                if ("callInner".equals(caller.getName()) || "invokeNativeMethod".equals(caller.getName()))
+                    if (!api.deoptimize(caller)) throw new IllegalStateException("Warranty cached caller deoptimization failed");
+            }
             hooks.add(api.hook(method).setId("wallet.warranty-bridge").intercept(chain -> {
+                diagnose(api, chain);
                 Repair repair = null;
                 try { repair = prepare(loader, chain); }
                 catch (Throwable failure) {
@@ -82,6 +97,25 @@ final class WarrantyCompat {
             for (XposedInterface.HookHandle hook : hooks) hook.unhook();
             WalletHooks.log(api, "Warranty bridge interface unavailable: " + failure.getClass().getSimpleName());
         }
+    }
+
+    private static void diagnose(XposedInterface api, XposedInterface.Chain chain) {
+        try {
+            Object cb = chain.getThisObject();
+            String name = (String) Reflect.get(cb, "mMethodName", String.class);
+            if (!"getDeviceInfo".equals(name) && !"getBaseDeviceInfo".equals(name) && !"getHeader".equals(name)) return;
+            String url = (String) Reflect.call(cb, "getUrl", String.class);
+            java.net.URI uri = new java.net.URI(url);
+            String path = uri.getRawPath();
+            if (path == null || !path.matches("/insurance/screenSecurity/[A-Za-z/]{1,60}")) path = "other";
+            String key = name + path;
+            if (!diagnosed.add(key)) return;
+            long started = (long) Reflect.get(cb, "apiStartTime", long.class);
+            WalletHooks.log(api, "Warranty callback diagnostic: method=" + name + "; page=" + path
+                    + "; allowed=" + WarrantyPolicy.allowed(url, name) + "; success=" + chain.getArg(0)
+                    + "; fresh=" + (System.currentTimeMillis() - started < 59000)
+                    + "; hasImei=" + (chain.getArg(2) instanceof JSONObject && ((JSONObject)chain.getArg(2)).has("imei")));
+        } catch (Throwable ignored) { }
     }
 
     private static Repair prepare(ClassLoader loader, XposedInterface.Chain chain) throws Throwable {
