@@ -3,6 +3,14 @@ package nfc.wallet.compat;
 import java.net.URI;
 
 final class WarrantyPolicy {
+    /**
+     * Official-warranty IMEI bridge. Only PJE110 has been verified; PJD110 is
+     * deliberately excluded so NFC evidence never widens the warranty scope.
+     */
+    static boolean supportedDevice(String model, int sdk) {
+        return "PJE110".equals(model) && sdk >= 36;
+    }
+
     static boolean allowed(String url, String method) {
         if (!"getDeviceInfo".equals(method) && !"getBaseDeviceInfo".equals(method) && !"getHeader".equals(method)) return false;
         if (url == null) return false;

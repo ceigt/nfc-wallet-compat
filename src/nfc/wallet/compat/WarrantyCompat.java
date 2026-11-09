@@ -112,7 +112,7 @@ final class WarrantyCompat {
         String method = (String) Reflect.get(callback, "mMethodName", String.class);
         String url = (String) Reflect.call(callback, "getUrl", String.class);
         if (!WarrantyPolicy.allowed(url, method)
-                || !NfcPolicy.supportedDevice(android.os.Build.MODEL, android.os.Build.VERSION.SDK_INT)) return null;
+                || !WarrantyPolicy.supportedDevice(android.os.Build.MODEL, android.os.Build.VERSION.SDK_INT)) return null;
         JSONObject original = (JSONObject) chain.getArg(2);
         if (!original.has("imei") && !"getHeader".equals(method)) return null;
         long started = (long) Reflect.get(callback, "apiStartTime", long.class);
@@ -126,7 +126,7 @@ final class WarrantyCompat {
     }
 
     private static String readImei(ClassLoader loader) throws Throwable {
-        if (!NfcPolicy.supportedDevice(android.os.Build.MODEL, android.os.Build.VERSION.SDK_INT)) return null;
+        if (!WarrantyPolicy.supportedDevice(android.os.Build.MODEL, android.os.Build.VERSION.SDK_INT)) return null;
         Class<?> util = Class.forName("com.finshell.common.util.d", false, loader);
         Context context = (Context) Reflect.invoke(util.getDeclaredMethod("c"), null);
         if (context == null || !WalletIdentity.matches(context, android.os.Process.myUid())

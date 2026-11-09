@@ -16,9 +16,15 @@ final class NfcPolicy {
             "535A542E57414C4C45542E454E56", "A000000632010105100091560000",
             "5041592E535A54", "A000000632010105"));
 
-    static boolean supportedDevice(String model, int sdk) {
-        return "PJE110".equals(model) && sdk >= 36;
+    /**
+     * NFC/AID routing support. PJE110 is the upstream reference device; PJD110
+     * (OnePlus 12) was verified on LineageOS 23.2 / Android 16 for transit cards,
+     * access cards and Alipay tap-to-pay while the wallet is the default app.
+     */
+    static boolean supportedNfcDevice(String model, int sdk) {
+        return ("PJE110".equals(model) || "PJD110".equals(model)) && sdk >= 36;
     }
+
 
     static boolean canCorrect(byte[] ese, byte[] uicc, Map<?, ?> forward, Map<?, ?> reverse) {
         if (ese == null || ese.length != 1 || forward == null || reverse == null

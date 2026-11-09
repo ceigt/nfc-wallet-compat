@@ -8,10 +8,16 @@ import java.util.Map;
 
 public final class PolicyTest {
     public static void main(String[] args) {
-        assert NfcPolicy.supportedDevice("PJE110", 36);
-        assert NfcPolicy.supportedDevice("PJE110", 37);
-        assert !NfcPolicy.supportedDevice("another-phone", 36);
-        assert !NfcPolicy.supportedDevice("PJE110", 35);
+        assert NfcPolicy.supportedNfcDevice("PJE110", 36);
+        assert NfcPolicy.supportedNfcDevice("PJE110", 37);
+        assert NfcPolicy.supportedNfcDevice("PJD110", 36);
+        assert NfcPolicy.supportedNfcDevice("PJD110", 37);
+        assert !NfcPolicy.supportedNfcDevice("another-phone", 36);
+        assert !NfcPolicy.supportedNfcDevice("PJE110", 35);
+        assert !NfcPolicy.supportedNfcDevice("PJD110", 35);
+        // Warranty scope must stay PJE110-only until PJD110 is verified separately.
+        assert WarrantyPolicy.supportedDevice("PJE110", 36);
+        assert !WarrantyPolicy.supportedDevice("PJD110", 36);
         Map<String, Integer> forward = new HashMap<>();
         Map<Integer, String> reverse = new HashMap<>();
         forward.put("eSE1", 1); forward.put("SIM1", 0x81); forward.put("NDEF-NFCEE", 0xC0);

@@ -25,7 +25,7 @@ final class NfcRouteCompat {
         api = module;
         List<XposedInterface.HookHandle> registered = new ArrayList<>();
         try {
-            if (!NfcPolicy.supportedDevice(Build.MODEL, Build.VERSION.SDK_INT)) {
+            if (!NfcPolicy.supportedNfcDevice(Build.MODEL, Build.VERSION.SDK_INT)) {
                 log("NFC device profile unsupported; no route hooks installed");
                 return;
             }
